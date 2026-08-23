@@ -530,6 +530,13 @@ svg{display:block;overflow:visible}
 .v-cf-mid{color:var(--c3);border-color:#4a3a1c;background:var(--gold-soft)}
 .v-cf-low{color:var(--neg);border-color:var(--neg);background:var(--neg-soft)}
 
+.v-tabs{display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--rule)}
+.v-tab{background:none;border:0;border-bottom:2px solid transparent;color:var(--ink-3);
+  padding:8px 12px;font-size:11.5px;font-weight:600;letter-spacing:.03em;cursor:pointer}
+.v-tab:hover{color:var(--ink-2)}
+.v-tab.active{color:var(--ink);border-bottom-color:var(--c1)}
+.v-paste{width:100%;font-family:var(--mono,monospace);font-size:11px;line-height:1.5;resize:vertical}
+
 </style>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
 </head>
@@ -695,7 +702,7 @@ svg{display:block;overflow:visible}
             <div class="row-actions">
               <button class="btn sm" id="btnAddHolding">+ Position</button>
               <button class="btn sm ghost" id="btnAddTx">+ Mouvement</button>
-              <button class="btn sm ghost" id="btnImportPhoto">⤢ Importer une photo</button>
+              <button class="btn sm ghost" id="btnImportPhoto">⤢ Importer des positions</button>
             </div>
           </div>
           <div id="holdingsTable" class="table-wrap"></div>
@@ -883,6 +890,8 @@ svg{display:block;overflow:visible}
             <label>Crypto % <input class="input" type="number" id="tgtCrypto"></label>
             <label>Immobilier % <input class="input" type="number" id="tgtImmo"></label>
             <button class="btn sm" id="btnSaveTarget">Enregistrer</button>
+            <button class="btn sm ghost" id="btnTargetFromCurrent"
+              title="Utile pour démarrer : la cible devient ta répartition du moment, puis tu la fais évoluer.">↧ Caler sur ma répartition actuelle</button>
           </div>
         </div>
 
@@ -2420,40 +2429,98 @@ svg{display:block;overflow:visible}
   const esc = s => G.UI.esc(s);
 
   function openImport() {
-    if (!enabled()) {
-      G.UI.toast("La lecture de photo demande une clé Anthropic. Ajoute-la dans Réglages.", 'err');
-      G.UI.go('settings');
-      return;
-    }
     files = []; pending = [];
-    G.UI.openModal('Importer depuis une photo', pickerHTML(), null, null, { wide: true, noSave: true });
+    G.UI.openModal('Importer des positions', pickerHTML(), null, null, { wide: true, noSave: true });
     wirePicker();
   }
 
+  /* Deux chemins vers le même écran de validation :
+     · lecture d'images, qui demande une clé Anthropic ;
+     · collage d'un relevé JSON, qui n'en demande aucune — c'est le format que
+       produit n'importe quel assistant à qui tu montres tes captures.
+     Le second existe précisément pour que l'import reste possible sans clé.  */
   function pickerHTML() {
+    const ok = enabled();
     return `
-      <p class="note">Envoie des captures d'écran de tes comptes — Binance, Bitstack,
-      Crypto.com, ton courtier… Jusqu'à ${MAX_IMAGES} images à la fois.
-      <b>Rien ne sera créé sans ta validation</b> : tu verras d'abord ce qui a été lu.</p>
-      <div id="vDrop" class="v-drop">
-        <input type="file" id="vFiles" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
-        <div class="v-drop-in">
-          <div class="v-drop-icon">⤢</div>
-          <div>Dépose tes images ici, ou <button class="btn sm" id="vPick" type="button">choisis des fichiers</button></div>
-          <div class="muted sm">PNG, JPEG, WebP · les images sont réduites avant envoi</div>
+      <div class="v-tabs">
+        <button class="v-tab active" data-tab="paste" type="button">Coller un relevé</button>
+        <button class="v-tab" data-tab="img" type="button">Lire des images${ok ? '' : ' 🔒'}</button>
+      </div>
+
+      <div class="v-pane" data-pane="paste">
+        <p class="note">Colle ici un relevé au format JSON. <b>Aucune clé d'API n'est
+        nécessaire.</b> Rien ne sera créé sans ta validation : tu verras d'abord
+        le détail, ligne par ligne.</p>
+        <textarea class="input v-paste" id="vText" rows="9" spellcheck="false"
+          placeholder='{"positions":[
+  {"type":"crypto","ticker":"BTC","name":"Bitcoin","quantity":0.0842,"avgPrice":52000,"currency":"EUR","account":"Bitstack"},
+  {"type":"crypto","ticker":"ETH","name":"Ethereum","quantity":1.35,"avgPrice":2100,"currency":"EUR","account":"Binance"}
+]}'></textarea>
+        <div class="row-actions" style="margin-top:12px;justify-content:flex-end">
+          <button class="btn primary" id="vRead" type="button">Lire le relevé</button>
         </div>
       </div>
-      <div id="vThumbs" class="v-thumbs"></div>
-      <div id="vStatus" class="v-status"></div>
-      <div class="row-actions" style="margin-top:14px;justify-content:flex-end">
-        <button class="btn primary" id="vGo" type="button" disabled>Lire les images</button>
-      </div>`;
+
+      <div class="v-pane" data-pane="img" hidden>
+        ${ok ? '' : `<div class="v-warn">La lecture d'images demande une clé Anthropic
+          (<code>ANTHROPIC_API_KEY</code> côté serveur, ou saisie dans Réglages).
+          Sans elle, utilise l'onglet « Coller un relevé ».</div>`}
+        <p class="note">Captures d'écran de tes comptes — Binance, Bitstack,
+        Crypto.com, ton courtier… Jusqu'à ${MAX_IMAGES} images à la fois.</p>
+        <div id="vDrop" class="v-drop">
+          <input type="file" id="vFiles" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+          <div class="v-drop-in">
+            <div class="v-drop-icon">⤢</div>
+            <div>Dépose tes images ici, ou <button class="btn sm" id="vPick" type="button" ${ok ? '' : 'disabled'}>choisis des fichiers</button></div>
+            <div class="muted sm">PNG, JPEG, WebP · les images sont réduites avant envoi</div>
+          </div>
+        </div>
+        <div id="vThumbs" class="v-thumbs"></div>
+        <div class="row-actions" style="margin-top:14px;justify-content:flex-end">
+          <button class="btn primary" id="vGo" type="button" disabled>Lire les images</button>
+        </div>
+      </div>
+
+      <div id="vStatus" class="v-status"></div>`;
+  }
+
+  /** Lecture d'un relevé collé — aucun réseau, aucune clé. */
+  function readPasted() {
+    const status = document.querySelector('#vStatus');
+    const txt = (document.querySelector('#vText').value || '').trim();
+    if (!txt) { status.innerHTML = `<div class="v-err">Colle d'abord un relevé.</div>`; return; }
+    let res;
+    try { res = parse(txt); }
+    catch (e) {
+      status.innerHTML = `<div class="v-err">Relevé illisible : ${esc(e.message)}.<br>
+        Attendu : un objet JSON avec une clé <code>positions</code>.</div>`;
+      return;
+    }
+    if (!res.positions.length) {
+      status.innerHTML = `<div class="v-err">Aucune position exploitable dans ce relevé.</div>`;
+      return;
+    }
+    pending = res.positions;
+    showReview(res);
   }
 
   function wirePicker() {
+    document.querySelectorAll('.v-tab').forEach(t => t.addEventListener('click', () => {
+      document.querySelectorAll('.v-tab').forEach(x => x.classList.toggle('active', x === t));
+      document.querySelectorAll('.v-pane').forEach(p => p.hidden = p.dataset.pane !== t.dataset.tab);
+      document.querySelector('#vStatus').innerHTML = '';
+    }));
+    document.querySelector('#vRead').addEventListener('click', readPasted);
+
     const drop = document.querySelector('#vDrop');
     const input = document.querySelector('#vFiles');
-    document.querySelector('#vPick').addEventListener('click', () => input.click());
+    document.querySelector('#vPick').addEventListener('click', () => {
+      if (!enabled()) {
+        G.UI.toast("Sans clé Anthropic, utilise l'onglet « Coller un relevé ».", 'err');
+        return;
+      }
+      input.click();
+    });
     input.addEventListener('change', () => addFiles(input.files));
     ['dragenter', 'dragover'].forEach(e => drop.addEventListener(e, ev => {
       ev.preventDefault(); drop.classList.add('over');
@@ -2555,7 +2622,7 @@ svg{display:block;overflow:visible}
 
   function wireReview() {
     document.querySelector('#vBack').addEventListener('click', () => {
-      G.UI.setModalBody('Importer depuis une photo', pickerHTML());
+      G.UI.setModalBody('Importer des positions', pickerHTML());
       wirePicker(); renderThumbs();
     });
     document.querySelectorAll('.v-review tr[data-id]').forEach(tr => {
@@ -2600,7 +2667,7 @@ svg{display:block;overflow:visible}
     G.UI.renderPortfolio(); G.UI.renderDashboard();
   }
 
-  G.Vision = { openImport, enabled, parse, clean, extract };
+  G.Vision = { openImport, enabled, parse, clean, extract, readPasted };
 })(window);
 
 
@@ -6056,6 +6123,25 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
       if (sum !== 100) { U().toast(`Le total doit faire 100 % (actuellement ${sum} %).`, 'err'); return; }
       st().profile.target = t; G.Store.save();
       U().renderDashboard(); U().toast('Allocation cible enregistrée.', 'ok');
+    });
+
+    /* Démarrage réaliste : quand un portefeuille est concentré sur une seule
+       classe, une cible théorique noie l'écran d'alertes. Caler la cible sur
+       l'existant rend l'app lisible tout de suite ; l'utilisateur déplace
+       ensuite les curseurs vers là où il veut aller. */
+    $('#btnTargetFromCurrent').addEventListener('click', () => {
+      const a = G.Store.snapshot().alloc;
+      const t = {};
+      G.Store.CLASSES.forEach(k => t[k] = Math.round(a[k] || 0));
+      // l'arrondi peut faire 99 ou 101 : on recale sur la plus grosse poche
+      const ecart = 100 - G.Store.CLASSES.reduce((s, k) => s + t[k], 0);
+      if (ecart) {
+        const gros = G.Store.CLASSES.reduce((b, k) => t[k] > t[b] ? k : b, G.Store.CLASSES[0]);
+        t[gros] += ecart;
+      }
+      st().profile.target = t; G.Store.save();
+      U().renderSettings(); U().renderDashboard();
+      U().toast('Cible calée sur ta répartition actuelle. Fais-la évoluer à mesure que tu diversifies.', 'ok');
     });
 
     $('#btnResetProfile').addEventListener('click', () => {

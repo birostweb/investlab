@@ -19,6 +19,9 @@
 
   let pending = [];               // positions extraites, en attente de validation
   let files = [];                 // images choisies
+  let proposedTarget = null;      // cible d'allocation proposée par le relevé
+
+  const LBL = { etf: 'ETF', actions: 'Actions', crypto: 'Crypto', immobilier: 'Immobilier' };
 
   /* ------------------------------------------------------------ disponible ? */
   function enabled() {
@@ -107,8 +110,23 @@
     return {
       positions: Array.isArray(o.positions) ? o.positions.map(clean).filter(Boolean) : [],
       warnings: Array.isArray(o.warnings) ? o.warnings.map(String) : [],
-      detected: o.detected || null
+      detected: o.detected || null,
+      target: cleanTarget(o.target)
     };
+  }
+
+  /** Cible d'allocation optionnelle : n'est retenue que si les quatre classes
+   *  sont présentes et totalisent 100. Une cible bancale est ignorée plutôt
+   *  que corrigée en douce. */
+  function cleanTarget(t) {
+    if (!t || typeof t !== 'object') return null;
+    const out = {};
+    for (const k of G.Store.CLASSES) {
+      const n = numOrNull(t[k]);
+      if (n === null || n < 0 || n > 100) return null;
+      out[k] = n;
+    }
+    return Math.abs(G.Store.CLASSES.reduce((a, k) => a + out[k], 0) - 100) < 0.01 ? out : null;
   }
 
   const numOrNull = v => {
@@ -140,7 +158,9 @@
         ? String(p.currency).toUpperCase() : 'EUR',
       account: String(p.account || '').trim().slice(0, 30) || 'Autre',
       confidence: ['haute', 'moyenne', 'basse'].includes(p.confidence) ? p.confidence : 'moyenne',
-      source: String(p.source || '').slice(0, 120)
+      source: String(p.source || '').slice(0, 120),
+      stakingPct: numOrNull(p.stakingPct),
+      stakingUntil: /^\d{4}-\d{2}-\d{2}$/.test(String(p.stakingUntil || '')) ? p.stakingUntil : null
     };
   }
 
@@ -159,40 +179,99 @@
   const esc = s => G.UI.esc(s);
 
   function openImport() {
-    if (!enabled()) {
-      G.UI.toast("La lecture de photo demande une clé Anthropic. Ajoute-la dans Réglages.", 'err');
-      G.UI.go('settings');
-      return;
-    }
     files = []; pending = [];
-    G.UI.openModal('Importer depuis une photo', pickerHTML(), null, null, { wide: true, noSave: true });
+    G.UI.openModal('Importer des positions', pickerHTML(), null, null, { wide: true, noSave: true });
     wirePicker();
   }
 
+  /* Deux chemins vers le même écran de validation :
+     · lecture d'images, qui demande une clé Anthropic ;
+     · collage d'un relevé JSON, qui n'en demande aucune — c'est le format que
+       produit n'importe quel assistant à qui tu montres tes captures.
+     Le second existe précisément pour que l'import reste possible sans clé.  */
   function pickerHTML() {
+    const ok = enabled();
     return `
-      <p class="note">Envoie des captures d'écran de tes comptes — Binance, Bitstack,
-      Crypto.com, ton courtier… Jusqu'à ${MAX_IMAGES} images à la fois.
-      <b>Rien ne sera créé sans ta validation</b> : tu verras d'abord ce qui a été lu.</p>
-      <div id="vDrop" class="v-drop">
-        <input type="file" id="vFiles" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
-        <div class="v-drop-in">
-          <div class="v-drop-icon">⤢</div>
-          <div>Dépose tes images ici, ou <button class="btn sm" id="vPick" type="button">choisis des fichiers</button></div>
-          <div class="muted sm">PNG, JPEG, WebP · les images sont réduites avant envoi</div>
+      <div class="v-tabs">
+        <button class="v-tab active" data-tab="paste" type="button">Coller un relevé</button>
+        <button class="v-tab" data-tab="img" type="button">Lire des images${ok ? '' : ' 🔒'}</button>
+      </div>
+
+      <div class="v-pane" data-pane="paste">
+        <p class="note">Colle ici un relevé au format JSON. <b>Aucune clé d'API n'est
+        nécessaire.</b> Rien ne sera créé sans ta validation : tu verras d'abord
+        le détail, ligne par ligne.</p>
+        <textarea class="input v-paste" id="vText" rows="9" spellcheck="false"
+          placeholder='{"positions":[
+  {"type":"crypto","ticker":"BTC","name":"Bitcoin","quantity":0.0842,"avgPrice":52000,"currency":"EUR","account":"Bitstack"},
+  {"type":"crypto","ticker":"ETH","name":"Ethereum","quantity":1.35,"avgPrice":2100,"currency":"EUR","account":"Binance"}
+],
+"target":{"etf":45,"actions":15,"crypto":20,"immobilier":20}}'></textarea>
+        <div class="row-actions" style="margin-top:12px;justify-content:flex-end">
+          <button class="btn primary" id="vRead" type="button">Lire le relevé</button>
         </div>
       </div>
-      <div id="vThumbs" class="v-thumbs"></div>
-      <div id="vStatus" class="v-status"></div>
-      <div class="row-actions" style="margin-top:14px;justify-content:flex-end">
-        <button class="btn primary" id="vGo" type="button" disabled>Lire les images</button>
-      </div>`;
+
+      <div class="v-pane" data-pane="img" hidden>
+        ${ok ? '' : `<div class="v-warn">La lecture d'images demande une clé Anthropic
+          (<code>ANTHROPIC_API_KEY</code> côté serveur, ou saisie dans Réglages).
+          Sans elle, utilise l'onglet « Coller un relevé ».</div>`}
+        <p class="note">Captures d'écran de tes comptes — Binance, Bitstack,
+        Crypto.com, ton courtier… Jusqu'à ${MAX_IMAGES} images à la fois.</p>
+        <div id="vDrop" class="v-drop">
+          <input type="file" id="vFiles" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+          <div class="v-drop-in">
+            <div class="v-drop-icon">⤢</div>
+            <div>Dépose tes images ici, ou <button class="btn sm" id="vPick" type="button" ${ok ? '' : 'disabled'}>choisis des fichiers</button></div>
+            <div class="muted sm">PNG, JPEG, WebP · les images sont réduites avant envoi</div>
+          </div>
+        </div>
+        <div id="vThumbs" class="v-thumbs"></div>
+        <div class="row-actions" style="margin-top:14px;justify-content:flex-end">
+          <button class="btn primary" id="vGo" type="button" disabled>Lire les images</button>
+        </div>
+      </div>
+
+      <div id="vStatus" class="v-status"></div>`;
+  }
+
+  /** Lecture d'un relevé collé — aucun réseau, aucune clé. */
+  function readPasted() {
+    const status = document.querySelector('#vStatus');
+    const txt = (document.querySelector('#vText').value || '').trim();
+    if (!txt) { status.innerHTML = `<div class="v-err">Colle d'abord un relevé.</div>`; return; }
+    let res;
+    try { res = parse(txt); }
+    catch (e) {
+      status.innerHTML = `<div class="v-err">Relevé illisible : ${esc(e.message)}.<br>
+        Attendu : un objet JSON avec une clé <code>positions</code>.</div>`;
+      return;
+    }
+    if (!res.positions.length) {
+      status.innerHTML = `<div class="v-err">Aucune position exploitable dans ce relevé.</div>`;
+      return;
+    }
+    pending = res.positions;
+    showReview(res);
   }
 
   function wirePicker() {
+    document.querySelectorAll('.v-tab').forEach(t => t.addEventListener('click', () => {
+      document.querySelectorAll('.v-tab').forEach(x => x.classList.toggle('active', x === t));
+      document.querySelectorAll('.v-pane').forEach(p => p.hidden = p.dataset.pane !== t.dataset.tab);
+      document.querySelector('#vStatus').innerHTML = '';
+    }));
+    document.querySelector('#vRead').addEventListener('click', readPasted);
+
     const drop = document.querySelector('#vDrop');
     const input = document.querySelector('#vFiles');
-    document.querySelector('#vPick').addEventListener('click', () => input.click());
+    document.querySelector('#vPick').addEventListener('click', () => {
+      if (!enabled()) {
+        G.UI.toast("Sans clé Anthropic, utilise l'onglet « Coller un relevé ».", 'err');
+        return;
+      }
+      input.click();
+    });
     input.addEventListener('change', () => addFiles(input.files));
     ['dragenter', 'dragover'].forEach(e => drop.addEventListener(e, ev => {
       ev.preventDefault(); drop.classList.add('over');
@@ -253,6 +332,7 @@
 
   /* ------------------------------------------------------------ validation */
   function showReview(res) {
+    proposedTarget = res.target || null;
     const body = `
       <p class="note">${res.detected ? `Plateforme reconnue : <b>${esc(res.detected)}</b>. ` : ''}
       <b>${pending.length}</b> position(s) lue(s). Vérifie chaque ligne : une lecture d'image
@@ -262,6 +342,12 @@
         <th></th><th>Type</th><th>Ticker</th><th>Nom</th>
         <th class="num">Quantité</th><th class="num">PRU</th><th>Devise</th><th>Compte</th><th>Lecture</th>
       </tr></thead><tbody>${pending.map(rowHTML).join('')}</tbody></table></div>
+      ${res.target ? `<label class="v-target">
+        <input type="checkbox" id="vApplyTarget" checked>
+        <span>Régler aussi mon <b>allocation cible</b> :
+        ${G.Store.CLASSES.map(k => `${LBL[k]} ${res.target[k]} %`).join(' · ')}
+        <span class="muted sm">— modifiable à tout moment dans Réglages</span></span>
+      </label>` : ''}
       <p class="note" style="margin-top:12px">Les cases vides n'ont pas pu être lues — remplis-les
       toi-même plutôt que de laisser l'application deviner. Sans prix de revient, la position sera
       créée mais sa plus-value restera à zéro tant que tu ne l'auras pas saisi.</p>
@@ -294,7 +380,7 @@
 
   function wireReview() {
     document.querySelector('#vBack').addEventListener('click', () => {
-      G.UI.setModalBody('Importer depuis une photo', pickerHTML());
+      G.UI.setModalBody('Importer des positions', pickerHTML());
       wirePicker(); renderThumbs();
     });
     document.querySelectorAll('.v-review tr[data-id]').forEach(tr => {
@@ -328,16 +414,24 @@
         avgPrice: Number(p.avgPrice) || 0,
         currency: p.currency || 'EUR',
         account: p.account || 'Autre',
+        stakingPct: p.stakingPct,
+        stakingUntil: p.stakingUntil,
         importedFrom: 'photo',
         importedAt: G.Store.todayISO()
       });
       n++;
     });
+    const box = document.querySelector('#vApplyTarget');
+    let cible = '';
+    if (proposedTarget && box && box.checked) {
+      G.Store.state.profile.target = Object.assign({}, proposedTarget);
+      cible = ' Allocation cible réglée.';
+    }
     G.Store.save(true);
     G.UI.closeModal();
-    G.UI.toast(`${n} position(s) créée(s). Vérifie les prix de revient, puis lance « Actualiser ».`, 'ok');
-    G.UI.renderPortfolio(); G.UI.renderDashboard();
+    G.UI.toast(`${n} position(s) créée(s).${cible} Vérifie les prix de revient, puis lance « Actualiser ».`, 'ok');
+    G.UI.renderPortfolio(); G.UI.renderDashboard(); G.UI.renderSettings();
   }
 
-  G.Vision = { openImport, enabled, parse, clean, extract };
+  G.Vision = { openImport, enabled, parse, clean, cleanTarget, extract, readPasted };
 })(window);

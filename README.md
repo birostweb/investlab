@@ -234,10 +234,32 @@ Pour découvrir l'interface sans saisir tes vraies données :
 
 ## 7. Importer un portefeuille depuis des photos
 
-**Portefeuille → ⤢ Importer une photo.** Dépose jusqu'à 8 captures d'écran
-(Binance, Bitstack, Crypto.com, Coinbase, Kraken, ton courtier…). Les images
+**Portefeuille → ⤢ Importer des positions.** Deux chemins mènent au même écran
+de vérification.
+
+### a. Coller un relevé — sans aucune clé
+
+Onglet **« Coller un relevé »** : colle un objet JSON décrivant tes positions.
+
+```json
+{"positions":[
+  {"type":"crypto","ticker":"BTC","name":"Bitcoin","quantity":0.0842,
+   "avgPrice":52000,"currency":"EUR","account":"Bitstack"},
+  {"type":"crypto","ticker":"ETH","name":"Ethereum","quantity":1.35,
+   "avgPrice":2100,"currency":"EUR","account":"Binance"}
+]}
+```
+
+C'est le format que produit n'importe quel assistant à qui tu montres tes
+captures d'écran — y compris Claude dans une conversation ordinaire. Aucune clé
+d'API n'est nécessaire : la lecture se fait ailleurs, l'application ne fait que
+vérifier et créer.
+
+### b. Lire des images — avec une clé Anthropic
+
+Onglet **« Lire des images »** : dépose jusqu'à 8 captures d'écran. Les images
 sont réduites dans ton navigateur, envoyées à Claude, et les positions lues
-s'affichent dans un tableau de vérification.
+s'affichent dans le même tableau de vérification.
 
 **Rien n'est créé sans ta validation.** Chaque ligne porte :
 
@@ -249,8 +271,9 @@ Tu décoches ce que tu ne veux pas, tu corriges ce qui est faux, puis tu crées.
 
 ### Ce qu'il faut savoir
 
-- Il faut une **clé Anthropic** : `ANTHROPIC_API_KEY` côté serveur, ou saisie
-  dans **Réglages** en mode hors ligne. Sans elle, le bouton te le dit.
+- Seul l'onglet « Lire des images » demande une **clé Anthropic**
+  (`ANTHROPIC_API_KEY` côté serveur, ou saisie dans **Réglages** hors ligne).
+  Le collage d'un relevé fonctionne toujours.
 - Un **prix de revient n'est jamais déduit d'un cours affiché**. Beaucoup
   d'applications crypto ne montrent que le cours du moment : dans ce cas le PRU
   reste vide et tu le saisis toi-même, sinon ta plus-value serait fausse.
@@ -261,7 +284,25 @@ Tu décoches ce que tu ne veux pas, tu corriges ce qui est faux, puis tu crées.
 
 ---
 
-## 8. Les règles codées dans le moteur
+## 8. Démarrer avec un portefeuille concentré
+
+Si tu ne détiens qu'une seule classe d'actifs — que de la crypto, par exemple —
+la cible théorique de ton profil produit une page d'écarts d'allocation qui
+noie tout le reste.
+
+**Réglages → ↧ Caler sur ma répartition actuelle** aligne la cible sur ce que tu
+détiens réellement. Les alertes d'allocation disparaissent ; **celles de risque
+restent** — concentration, poche crypto au-dessus de ta tolérance, nombre
+d'expositions effectives. C'est voulu : caler la cible rend l'écran lisible, ça
+ne rend pas un portefeuille concentré prudent pour autant.
+
+Ensuite, tu déplaces les curseurs vers là où tu veux aller, et « Mon plan »
+oriente tes versements dans cette direction — sans jamais te faire vendre :
+rééquilibrer par les apports coûte moins cher en frais et en impôt.
+
+---
+
+## 9. Les règles codées dans le moteur
 
 1. **Jamais de donnée inventée.** Chaque chiffre porte sa source et sa date.
 2. **Jamais de score partiel déguisé en score.** En dessous de 4 dimensions
@@ -276,7 +317,7 @@ Tu décoches ce que tu ne veux pas, tu corriges ce qui est faux, puis tu crées.
 
 ---
 
-## 9. Limites, dites franchement
+## 10. Limites, dites franchement
 
 - **Bricks n'a pas d'API publique ouverte.** Les projets se saisissent à la
   main : aucune récupération non autorisée n'est faite.
@@ -309,7 +350,7 @@ Tu décoches ce que tu ne veux pas, tu corriges ce qui est faux, puis tu crées.
 
 ---
 
-## 10. Sécurité
+## 11. Sécurité
 
 - Accès protégé par mot de passe, session signée en HMAC-SHA256, cookie
   `HttpOnly` + `SameSite=Lax` + `Secure` derrière HTTPS.
@@ -332,7 +373,7 @@ Tu décoches ce que tu ne veux pas, tu corriges ce qui est faux, puis tu crées.
 
 ---
 
-## 11. En cas de problème
+## 12. En cas de problème
 
 | Symptôme | Cause probable | Solution |
 |---|---|---|
@@ -342,7 +383,8 @@ Tu décoches ce que tu ne veux pas, tu corriges ce qui est faux, puis tu crées.
 | Page blanche | ouverture directe de `public/index.html` | passe par `npm start`, ou utilise `MonInvestisseurIA.html` |
 | « Aucun fournisseur configuré » | aucune clé d'API | normal pour les ETF/actions — les cryptos se cotent quand même |
 | Une crypto ne se cote pas | ticker absent du catalogue CoinGecko | ajoute-le dans `CRYPTO_CATALOG` (`public/js/data.js`) et `COINGECKO_IDS` (`server/lib/providers.js`) |
-| « La lecture de photo demande une clé » | `ANTHROPIC_API_KEY` absente | ajoute-la dans `.env` puis `npm run dev` |
+| « Lire des images » est verrouillé | `ANTHROPIC_API_KEY` absente | utilise l'onglet « Coller un relevé », qui n'en demande pas |
+| Une page d'écarts d'allocation | portefeuille concentré sur une classe | Réglages → ↧ Caler sur ma répartition actuelle (§8) |
 | L'écran de connexion refuse le mot de passe | `APP_PASSWORD` non transmis au processus | `npm run dev` avec un `.env`, ou passe-le en variable |
 | Trop de tentatives | limiteur de connexion déclenché | attends 15 minutes, ou redémarre le serveur |
 | Le fichier hors ligne est périmé | `public/` a changé depuis | `npm run build:offline` |
@@ -352,7 +394,7 @@ fournisseur et chaque rafraîchissement y sont tracés avec leur durée.
 
 ---
 
-## 12. Structure
+## 13. Structure
 
 ```
 investlab/

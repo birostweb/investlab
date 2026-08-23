@@ -155,12 +155,19 @@
     const perf = $('#heroPerf');
     perf.textContent = pctS(s.plPct, 1);
     perf.className = 'pill' + (s.plPct < 0 ? ' neg' : '');
-    $('#heroPl').textContent = `${s.pl >= 0 ? '+' : ''}${eur(s.pl)} de plus-value latente`;
+    // on ne laisse jamais croire que la plus-value couvre tout le portefeuille
+    $('#heroPl').textContent = s.unpriced.length
+      ? `${s.pl >= 0 ? '+' : ''}${eur(s.pl)} sur ${pctA(s.plCoverage)} du portefeuille — ` +
+        `${s.unpriced.length} ligne(s) sans prix de revient`
+      : `${s.pl >= 0 ? '+' : ''}${eur(s.pl)} de plus-value latente`;
     $('#statMonth').textContent = eur(G.Store.investedInMonth());
     $('#statCrypto').textContent = eur(s.cryptoValue);
     const y = G.Store.currentYield(s);
     $('#statIncome').textContent = eur(y.realised);
     $('#statYield').textContent = pctA(y.pct);
+    const st2 = $('#statYield').parentElement.querySelector('span');
+    if (st2) st2.textContent = y.expectedStaking > 0
+      ? 'Rendement courant (dont staking)' : 'Rendement courant';
 
     // allocation
     const A = G.DATA.ASSET_COLORS;
@@ -227,7 +234,8 @@
       return `<tr data-hid="${h.id}">
         <td><span class="tag ${TYPE_CLS[h.type] || 'action'}">${TYPE_LBL[h.type] || 'Action'}</span></td>
         <td><span class="tick">${esc(h.ticker || '—')}</span><span class="sub">${esc(h.name || (cat ? cat.name : ''))}</span></td>
-        <td>${esc(h.account)}${cat && cat.pea ? ' <span class="tag pea">PEA</span>' : ''}</td>
+        <td>${esc(h.account)}${cat && cat.pea ? ' <span class="tag pea">PEA</span>' : ''}${
+          Number(h.stakingPct) > 0 ? ` <span class="tag stake" title="Immobilisé${h.stakingUntil ? " jusqu'au " + esc(h.stakingUntil) : ''}">🔒 ${h.stakingPct} %</span>` : ''}</td>
         <td class="num">${has(h.quantity) ? h.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 4 }) : '—'}</td>
         <td class="num">${eur2(h.avgPrice)}</td>
         <td class="num">${h._live ? eur2(h._price) : `<span class="muted">${eur2(h._price)}</span>`}
@@ -288,6 +296,8 @@
       ${field('region', 'Région (actions)', { type:'select', value: h ? h.region : '',
         options: [{v:'',l:'—'}].concat(['États-Unis','France','Europe hors RU','Royaume-Uni','Japon','Asie-Pacifique','Émergents','Chine'].map(x => ({v:x,l:x}))) })}
       ${field('currency', 'Devise', { type:'select', value: h ? h.currency : 'EUR', options:[{v:'EUR',l:'EUR'},{v:'USD',l:'USD'},{v:'GBP',l:'GBP'},{v:'CHF',l:'CHF'}] })}
+      ${field('stakingPct', 'Staking — rendement annoncé (%/an)', { type:'number', value: h ? h.stakingPct : '', ph:'11.44' })}
+      ${field('stakingUntil', 'Staking — immobilisé jusqu\'au', { type:'date', value: h ? h.stakingUntil : '' })}
     </div>
     <p class="note" style="margin-top:14px">Le ticker sert à récupérer le cours réel. Si tu rattaches un ETF au catalogue, sa composition (indice, frais, géographie, secteurs) alimente l'analyse de diversification.
     Pour une crypto, saisis simplement son symbole (<code>BTC</code>, <code>ETH</code>, <code>SOL</code>…) : les cours viennent de CoinGecko, sans clé d'API. Les quantités fractionnaires sont acceptées.</p>`;

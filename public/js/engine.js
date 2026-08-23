@@ -254,6 +254,17 @@
     if (snap.alloc.crypto > maxCrypto) push(2, 'Poche crypto au-dessus de ta tolérance',
       `${snap.alloc.crypto.toFixed(1)} % du patrimoine est en cryptoactifs, pour un maximum de ${maxCrypto} % sur un profil ${snap.profile.label.toLowerCase()}.`,
       'La crypto ne verse aucun revenu et sa volatilité dépasse largement celle des actions. Réorienter les prochains versements suffit à faire redescendre le poids sans vendre.');
+    // on part du snapshot : ses lignes portent déjà la valeur calculée
+    const aujourdhui = G.Store.todayISO();
+    const bloquees = snap.holdings.filter(h => h.stakingUntil && h.stakingUntil > aujourdhui);
+    if (bloquees.length) {
+      const val = bloquees.reduce((a, h) => a + h._value, 0);
+      const fin = bloquees.map(h => h.stakingUntil).sort().pop();
+      const part = snap.total > 0 ? val / snap.total * 100 : 0;
+      push(part > 25 ? 2 : 1, 'Positions immobilisées',
+        `${bloquees.map(h => h.ticker).join(', ')} — ${fmtE(val)} (${part.toFixed(1)} % du patrimoine) bloqués jusqu'au ${fin}.`,
+        'Un rendement de staking rémunère d\'abord cette immobilisation : tu ne peux ni vendre ni arbitrer d\'ici là, quoi que fasse le cours. Le rendement est par ailleurs versé dans le jeton lui-même, dont la valeur varie.');
+    }
     const stables = snap.holdings.filter(h => h.type === 'crypto' && (G.Store.cryptoMeta(h.ticker) || {}).cap === 'stable');
     const stablesVal = stables.reduce((a, h) => a + h._value, 0);
     if (snap.cryptoValue > 0 && stablesVal / snap.cryptoValue > 0.5) push(1, 'Poche crypto surtout en stablecoins',

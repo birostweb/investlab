@@ -449,8 +449,15 @@ async function refreshAll(manual) {
     total = symbols.size;
     if (!total) return { skipped: true, reason: 'aucun symbole servable par les fournisseurs actifs' };
 
+    // toutes les cryptos en un seul appel avant la boucle : sinon l'offre
+    // gratuite de CoinGecko coupe au bout de quelques jetons.
+    await providers.primeCryptoQuotes([...symbols], { force: true });
+
     for (const sym of symbols) {
-      const q = await providers.quote(sym, { force: true });
+      // les cryptos viennent d'être rafraîchies en lot : les forcer à nouveau
+      // relancerait un appel par jeton et se ferait limiter.
+      const dejaFrais = !!providers.isCrypto(sym);
+      const q = await providers.quote(sym, { force: !dejaFrais });
       if (q) updated++; else failed++;
       // l'historique est plus coûteux : on ne le force pas, le TTL suffit
       await providers.series(sym).catch(() => {});

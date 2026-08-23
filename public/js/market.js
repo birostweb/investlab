@@ -122,7 +122,7 @@
   }
   async function quoteCoinGecko(c) {
     const vs = c.quote.toLowerCase();
-    const j = await throttled('coingecko', 2500, () => getJSON(
+    const j = await throttled('coingecko', 3500, () => getJSON(
       `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(c.id)}` +
       `&vs_currencies=${encodeURIComponent(vs)}&include_24hr_change=true&include_last_updated_at=true`, 12000));
     const row = j && j[c.id];
@@ -135,7 +135,7 @@
     };
   }
   async function seriesCoinGecko(c) {
-    const j = await throttled('coingecko', 2500, () => getJSON(
+    const j = await throttled('coingecko', 3500, () => getJSON(
       `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(c.id)}/market_chart` +
       `?vs_currency=${encodeURIComponent(c.quote.toLowerCase())}&days=365&interval=daily`, 20000));
     if (!j || !Array.isArray(j.prices) || j.prices.length < 30) return null;
@@ -143,6 +143,47 @@
       closes: j.prices.map(([ms, v]) => ({ d: G.Store.localISO(new Date(ms)), c: num(v) })).filter(x => x.c != null),
       src: 'CoinGecko'
     };
+  }
+
+  /** Un seul appel CoinGecko pour toutes les cryptos (voir providers.js côté
+   *  serveur : l'offre gratuite coupe si on les interroge une par une). */
+  async function primeCryptoQuotes(symbols, opts) {
+    opts = opts || {};
+    const wanted = [];
+    for (const sym of symbols) {
+      const k = String(sym).toUpperCase();
+      const c = cryptoOf(k);
+      if (!c) continue;
+      if (!opts.force && fresh(cache().quotes[k], TTL.quote)) continue;
+      wanted.push({ k, c });
+    }
+    if (!wanted.length) return 0;
+    const parDevise = {};
+    wanted.forEach(w => (parDevise[w.c.quote] = parDevise[w.c.quote] || []).push(w));
+    let n = 0;
+    for (const [devise, lot] of Object.entries(parDevise)) {
+      const ids = [...new Set(lot.map(w => w.c.id))].join(',');
+      const vs = devise.toLowerCase();
+      let j;
+      try {
+        j = await throttled('coingecko', 3500, () => getJSON(
+          `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}` +
+          `&vs_currencies=${encodeURIComponent(vs)}&include_24hr_change=true&include_last_updated_at=true`, 15000));
+      } catch (e) { continue; }
+      for (const w of lot) {
+        const row = j && j[w.c.id];
+        const price = num(row && row[vs]);
+        if (price == null) continue;
+        cache().quotes[w.k] = { ts: Date.now(), v: {
+          price, currency: w.c.quote, changePct: num(row[vs + '_24h_change']),
+          name: w.c.base, source: 'CoinGecko',
+          asOf: row.last_updated_at ? G.Store.localISO(new Date(row.last_updated_at * 1000)) : G.Store.todayISO()
+        }};
+        n++;
+      }
+    }
+    G.Store.save();
+    return n;
   }
 
   /** Cotation : essaie chaque fournisseur configuré, garde le premier succès. */
@@ -386,9 +427,11 @@
     }
     // on n'interroge que ce qui est réellement cotable par un fournisseur actif
     const list = st.holdings.filter(h => h.ticker && canQuote(h.ticker));
+    await primeCryptoQuotes(list.map(h => h.ticker), { force: true });
     let done = 0, ok = 0;
     for (const h of list) {
-      const q = await quote(h.ticker, { force: true });
+      // idem côté navigateur : ne pas re-forcer ce que le lot vient de récupérer
+      const q = await quote(h.ticker, { force: !cryptoOf(h.ticker) });
       let written = false;
       if (q) {
         const conv = await toHoldingCurrency(q, h);
@@ -467,7 +510,7 @@
   }
 
   G.Market = {
-    quote, series, fundamentals, fx, refreshHoldings, canQuote, cryptoOf,
+    quote, series, fundamentals, fx, refreshHoldings, canQuote, cryptoOf, primeCryptoQuotes,
     hasProvider, providerStatus, testKeys, computeStats
   };
 })(window);

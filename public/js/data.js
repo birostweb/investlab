@@ -260,7 +260,9 @@
     { t:'FTM',  id:'fantom',       n:'Fantom',         cap:'small' },
     { t:'XTZ',  id:'tezos',        n:'Tezos',          cap:'small' },
     { t:'EGLD', id:'elrond-erd-2', n:'MultiversX',     cap:'small' },
-    { t:'KAS',  id:'kaspa',        n:'Kaspa',          cap:'small' }
+    { t:'KAS',  id:'kaspa',        n:'Kaspa',          cap:'small' },
+    { t:'CRO',  id:'crypto-com-chain',  n:'Cronos',   cap:'small' },
+    { t:'TRUMP',id:'official-trump',    n:'OFFICIAL TRUMP', cap:'small' }
   ];
   const CRYPTO_BY_TICKER = {};
   CRYPTO_CATALOG.forEach(c => CRYPTO_BY_TICKER[c.t] = c);

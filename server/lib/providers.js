@@ -28,7 +28,8 @@ const COINGECKO_IDS = {
   IMX:'immutable-x', GRT:'the-graph', AAVE:'aave', MKR:'maker', LDO:'lido-dao',
   STX:'blockstack', TIA:'celestia', SEI:'sei-network', RNDR:'render-token', PEPE:'pepe',
   CRV:'curve-dao-token', SAND:'the-sandbox', MANA:'decentraland', FTM:'fantom',
-  XTZ:'tezos', EGLD:'elrond-erd-2', KAS:'kaspa'
+  XTZ:'tezos', EGLD:'elrond-erd-2', KAS:'kaspa',
+  CRO:'crypto-com-chain', TRUMP:'official-trump'
 };
 /** Décompose « BTC » ou « BTC/EUR » en { id, base, quote } si c'est une crypto. */
 function cryptoOf(symbol) {
@@ -63,6 +64,7 @@ class Providers {
   /** CoinGecko ne demande aucune clé : un symbole crypto est toujours servable,
    *  même sans le moindre fournisseur actions configuré. */
   canServe(symbol) { return this.hasAny() || !!cryptoOf(symbol); }
+  isCrypto(symbol) { return !!cryptoOf(symbol); }
 
   async getJSON(url, timeoutMs) {
     const ctl = new AbortController();
@@ -123,9 +125,60 @@ class Providers {
       return null;
     });
   }
+  /** Un seul appel pour TOUTES les cryptos.
+   *  L'offre gratuite de CoinGecko limite le débit : interroger six jetons un
+   *  par un déclenche un 429 en cours de route et laisse des lignes sans cours.
+   *  `simple/price` accepte une liste d'identifiants — on ne fait donc qu'un
+   *  aller-retour, quel que soit le nombre de positions. */
+  async primeCryptoQuotes(symbols, opts) {
+    opts = opts || {};
+    const wanted = [];
+    for (const sym of symbols) {
+      const c = cryptoOf(sym);
+      if (!c) continue;
+      const key = 'q:' + sym;
+      if (opts.force) this.cache.delete(key);
+      else if (this.cache.get(key, TTL.quote)) continue;      // déjà frais
+      wanted.push({ sym, c, key });
+    }
+    if (!wanted.length) return 0;
+
+    // une requête par devise de cotation (en pratique : une seule, EUR)
+    const parDevise = {};
+    wanted.forEach(w => (parDevise[w.c.quote] = parDevise[w.c.quote] || []).push(w));
+    let n = 0;
+    for (const [devise, lot] of Object.entries(parDevise)) {
+      const ids = [...new Set(lot.map(w => w.c.id))].join(',');
+      const vs = devise.toLowerCase();
+      let j;
+      try {
+        j = await this.throttle('cg', 3500, () => this.getJSON(
+          `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}` +
+          `&vs_currencies=${encodeURIComponent(vs)}&include_24hr_change=true&include_last_updated_at=true`, 15000));
+      } catch (e) {
+        this.log('cours crypto groupés indisponibles (' + e.message + ')');
+        continue;
+      }
+      for (const w of lot) {
+        const row = j && j[w.c.id];
+        const price = U.num(row && row[vs]);
+        if (price == null) continue;
+        this.cache.set(w.key, {
+          price, currency: w.c.quote,
+          changePct: U.num(row[vs + '_24h_change']),
+          name: w.c.base, source: 'CoinGecko',
+          asOf: row.last_updated_at ? U.isoDate(row.last_updated_at * 1000) : U.isoDate()
+        });
+        n++;
+      }
+    }
+    this.log('cours crypto : ' + n + '/' + wanted.length + ' en 1 appel groupé');
+    return n;
+  }
+
   async _quoteCoinGecko(c) {
     const vs = c.quote.toLowerCase();
-    const j = await this.throttle('cg', 2500, () => this.getJSON(
+    const j = await this.throttle('cg', 3500, () => this.getJSON(
       `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(c.id)}` +
       `&vs_currencies=${encodeURIComponent(vs)}&include_24hr_change=true&include_last_updated_at=true`, 12000));
     const row = j && j[c.id];
@@ -187,7 +240,7 @@ class Providers {
       const c = cryptoOf(symbol);
       if (c) {
         try {
-          const j = await this.throttle('cg', 2500, () => this.getJSON(
+          const j = await this.throttle('cg', 3500, () => this.getJSON(
             `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(c.id)}/market_chart` +
             `?vs_currency=${encodeURIComponent(c.quote.toLowerCase())}&days=365&interval=daily`, 20000));
           if (j && Array.isArray(j.prices) && j.prices.length > 30) {

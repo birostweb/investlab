@@ -472,6 +472,25 @@
       U().renderDashboard(); U().toast('Allocation cible enregistrée.', 'ok');
     });
 
+    /* Démarrage réaliste : quand un portefeuille est concentré sur une seule
+       classe, une cible théorique noie l'écran d'alertes. Caler la cible sur
+       l'existant rend l'app lisible tout de suite ; l'utilisateur déplace
+       ensuite les curseurs vers là où il veut aller. */
+    $('#btnTargetFromCurrent').addEventListener('click', () => {
+      const a = G.Store.snapshot().alloc;
+      const t = {};
+      G.Store.CLASSES.forEach(k => t[k] = Math.round(a[k] || 0));
+      // l'arrondi peut faire 99 ou 101 : on recale sur la plus grosse poche
+      const ecart = 100 - G.Store.CLASSES.reduce((s, k) => s + t[k], 0);
+      if (ecart) {
+        const gros = G.Store.CLASSES.reduce((b, k) => t[k] > t[b] ? k : b, G.Store.CLASSES[0]);
+        t[gros] += ecart;
+      }
+      st().profile.target = t; G.Store.save();
+      U().renderSettings(); U().renderDashboard();
+      U().toast('Cible calée sur ta répartition actuelle. Fais-la évoluer à mesure que tu diversifies.', 'ok');
+    });
+
     $('#btnResetProfile').addEventListener('click', () => {
       st().profile.riskProfile = 'equilibre';
       st().profile.target = Object.assign({}, G.DATA.PROFILES.equilibre.target);

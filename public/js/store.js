@@ -156,7 +156,9 @@
     const rec = Object.assign({
       id: uid(), type: 'etf', ticker: '', name: '', isin: '', quantity: 0, avgPrice: 0,
       currency: 'EUR', account: 'CTO', lastPrice: null, lastPriceDate: null, lastPriceSource: null,
-      catalogId: null, sector: null, region: null, addedAt: todayISO()
+      catalogId: null, sector: null, region: null, addedAt: todayISO(),
+      // staking / rendement d'immobilisation (cryptos surtout)
+      stakingPct: null, stakingFrom: null, stakingUntil: null
     }, h);
     state.holdings.push(rec);
     save(); return rec;
@@ -270,10 +272,19 @@
     const invested = etfValue + stockValue + cryptoValue + bricksValue;
     const total = invested;
 
-    const marketCost = holdings.reduce((s, h) => s + h._cost, 0);
-    const cost = marketCost + bricksValue;
-    const pl = (etfValue + stockValue + cryptoValue) - marketCost;
-    const plPct = marketCost > 0 ? (pl / marketCost) * 100 : 0;
+    /* Plus-value calculée UNIQUEMENT sur les lignes ayant un prix de revient.
+       Une position importée depuis une capture d'écran n'en a souvent aucun :
+       la compter à coût nul afficherait la totalité de sa valeur comme un gain.
+       `plCoverage` dit quelle part du portefeuille la plus-value couvre. */
+    const priced = holdings.filter(h => h._cost > 0);
+    const costKnown = priced.reduce((s, h) => s + h._cost, 0);
+    const valueKnown = priced.reduce((s, h) => s + h._value, 0);
+    const marketValue = etfValue + stockValue + cryptoValue;
+    const cost = holdings.reduce((s, h) => s + h._cost, 0) + bricksValue;
+    const pl = valueKnown - costKnown;
+    const plPct = costKnown > 0 ? (pl / costKnown) * 100 : 0;
+    const plCoverage = marketValue > 0 ? (valueKnown / marketValue) * 100 : 100;
+    const unpriced = holdings.filter(h => h._cost <= 0 && h._value > 0);
 
     const alloc = { etf: 0, actions: 0, crypto: 0, immobilier: 0 };
     if (total > 0) {
@@ -284,7 +295,8 @@
     }
 
     return {
-      holdings, etfValue, stockValue, cryptoValue, bricksValue, invested, total, cost, pl, plPct, alloc,
+      holdings, etfValue, stockValue, cryptoValue, bricksValue, invested, total, cost, pl, plPct,
+      plCoverage, unpriced, alloc,
       target: normaliseTarget(state.profile.target),
       profile: G.DATA.PROFILES[state.profile.riskProfile] || G.DATA.PROFILES.equilibre
     };
@@ -320,12 +332,23 @@
     const bricksIncome = state.bricks
       .filter(b => b.status !== 'remboursé' && b.status !== 'perdu')
       .reduce((s, b) => s + (Number(b.amount) || 0) * (Number(b.yieldPct) || 0) / 100, 0);
+    /* Staking : rendement annoncé × valeur immobilisée. Comme pour l'immobilier,
+       c'est une ESPÉRANCE annoncée par la plateforme, pas un revenu encaissé —
+       les deux sont donc comptés séparément de `realised`. */
+    const stakingIncome = snap.holdings
+      .filter(h => Number(h.stakingPct) > 0)
+      .reduce((s, h) => s + h._value * Number(h.stakingPct) / 100, 0);
     const realised = incomeLast12m();
     const base = snap.invested;
     return {
-      realised, expectedRealEstate: bricksIncome,
-      pct: base > 0 ? ((realised + bricksIncome) / base) * 100 : 0
+      realised, expectedRealEstate: bricksIncome, expectedStaking: stakingIncome,
+      pct: base > 0 ? ((realised + bricksIncome + stakingIncome) / base) * 100 : 0
     };
+  }
+  /** Positions immobilisées dont la date de déblocage n'est pas passée. */
+  function lockedHoldings() {
+    const today = todayISO();
+    return state.holdings.filter(h => h.stakingUntil && h.stakingUntil > today);
   }
 
   /* ---------------------------------------------------------- import/export */
@@ -359,7 +382,7 @@
     addWatch, removeWatch,
     etfCatalog, findCatalog, cryptoMeta, normaliseTarget, CLASSES,
     priceOf, valueOf, costOf, snapshot,
-    investedInMonth, monthlySeries, incomeLast12m, currentYield,
+    investedInMonth, monthlySeries, incomeLast12m, currentYield, lockedHoldings,
     exportJSON, importJSON, wipe, blankState
   };
 })(window);
