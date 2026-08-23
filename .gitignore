@@ -1,0 +1,15 @@
+# Secrets — ne doivent jamais partir dans Git
+.env
+.env.local
+.env.production
+
+# Données locales
+data/
+*.log
+
+# Fichiers de travail
+_test.html
+node_modules/
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,54 @@
+# =============================================================================
+#  Mon Investisseur IA — déploiement Dokploy
+#
+#  Dans Dokploy : Create → Compose → colle ce fichier, puis renseigne les
+#  variables d'environnement dans l'onglet « Environment ».
+#  Traefik (fourni par Dokploy) gère le domaine et le certificat HTTPS.
+# =============================================================================
+services:
+  investai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
+    environment:
+      # --- OBLIGATOIRE : mot de passe d'accès à l'application ---------------
+      APP_PASSWORD: ${APP_PASSWORD:?definis APP_PASSWORD dans Dokploy}
+
+      # --- Données de marché (clés gratuites, jamais exposées au navigateur)
+      TWELVEDATA_KEY: ${TWELVEDATA_KEY:-}
+      FINNHUB_KEY: ${FINNHUB_KEY:-}
+      ALPHAVANTAGE_KEY: ${ALPHAVANTAGE_KEY:-}
+
+      # --- Chat en langage naturel (facultatif) ----------------------------
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-5}
+
+      # --- Réglages --------------------------------------------------------
+      # Intervalle de rafraîchissement automatique des cours, en minutes.
+      # 360 = 4 fois par jour, largement suffisant pour du long terme et
+      # confortable vis-à-vis des quotas gratuits. 0 pour désactiver.
+      REFRESH_MINUTES: ${REFRESH_MINUTES:-360}
+      SESSION_DAYS: ${SESSION_DAYS:-30}
+      TZ: ${TZ:-Europe/Paris}
+
+    volumes:
+      # Portefeuille, sauvegardes et cache marché — persistés hors du conteneur
+      - investai-data:/data
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    labels:
+      # Dokploy pilote Traefik ; le domaine se règle dans l'interface.
+      # Ce label indique seulement le port interne à exposer.
+      - "traefik.enable=true"
+      - "traefik.http.services.investai.loadbalancer.server.port=3000"
+
+volumes:
+  investai-data:

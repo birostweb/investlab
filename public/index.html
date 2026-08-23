@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mon Investisseur IA — InvestAI</title>
+<link rel="stylesheet" href="css/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+</head>
+<body>
+
+<!-- ============ ÉCRAN DE CONNEXION (mode serveur) ============ -->
+<div class="gate" id="gate" hidden>
+  <div class="gate-box">
+    <div class="gate-mark">IA</div>
+    <h2>Mon Investisseur</h2>
+    <p>Application privée · accès protégé</p>
+    <form id="gateForm" autocomplete="on">
+      <input class="input" type="password" id="gatePass" placeholder="Mot de passe" autocomplete="current-password" required>
+      <button class="btn primary" type="submit" id="gateBtn">Entrer</button>
+    </form>
+    <div class="gate-err" id="gateErr"></div>
+    <div class="gate-foot">
+      Tes données sont hébergées sur ton propre serveur.<br>
+      Aucun tiers n'y a accès.
+    </div>
+  </div>
+</div>
+
+<div id="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">IA</div>
+      <div class="brand-text">
+        <strong>Mon Investisseur</strong>
+        <span>InvestAI · privé</span>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-view="dashboard"><i>◆</i><span>Patrimoine</span></button>
+      <button class="nav-item" data-view="agent"><i>✦</i><span>InvestAI</span></button>
+      <button class="nav-item" data-view="portfolio"><i>▤</i><span>Portefeuille</span></button>
+      <button class="nav-item" data-view="etf"><i>◈</i><span>ETF</span></button>
+      <button class="nav-item" data-view="stocks"><i>▲</i><span>Actions</span></button>
+      <button class="nav-item" data-view="realestate"><i>⌂</i><span>Immobilier</span></button>
+      <button class="nav-item" data-view="opportunities"><i>★</i><span>Opportunités</span></button>
+      <button class="nav-item" data-view="plan"><i>➔</i><span>Mon plan</span></button>
+      <button class="nav-item" data-view="simulator"><i>∿</i><span>Simulateur</span></button>
+      <button class="nav-item" data-view="journal"><i>✎</i><span>Journal</span></button>
+      <button class="nav-item" data-view="settings"><i>⚙</i><span>Réglages</span></button>
+    </nav>
+
+    <div class="sidebar-foot">
+      <div class="profile-chip" id="profileChip">
+        <span class="dot"></span>
+        <div>
+          <strong id="chipProfile">Équilibré</strong>
+          <span id="chipHorizon">Horizon 10 ans</span>
+        </div>
+      </div>
+      <div class="data-health" id="dataHealth"></div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-left">
+        <h1 id="viewTitle">Mon patrimoine</h1>
+        <p id="viewSub">Vue d'ensemble consolidée</p>
+      </div>
+      <div class="topbar-right">
+        <span class="muted sm" id="saveState"></span>
+        <button class="btn ghost sm" id="btnRefresh" title="Rafraîchir les prix depuis les fournisseurs de données">↻ Actualiser</button>
+        <button class="btn ghost sm" id="btnExport" title="Exporter toutes mes données">⤓ Export</button>
+        <label class="btn ghost sm" title="Importer une sauvegarde">⤒ Import<input type="file" id="fileImport" accept="application/json" hidden></label>
+      </div>
+    </header>
+
+    <div class="views" id="views">
+
+      <!-- ===== DASHBOARD ===== -->
+      <section class="view active" data-view="dashboard">
+        <div class="hero">
+          <div class="hero-main">
+            <span class="label">MON PATRIMOINE</span>
+            <div class="hero-total" id="heroTotal">—</div>
+            <div class="hero-meta">
+              <span id="heroPerf" class="pill">—</span>
+              <span id="heroPl" class="muted">—</span>
+            </div>
+          </div>
+          <div class="hero-stats">
+            <div class="stat"><span>Investi ce mois</span><strong id="statMonth">—</strong></div>
+            <div class="stat"><span>Liquidités</span><strong id="statCash">—</strong></div>
+            <div class="stat"><span>Revenus 12 mois</span><strong id="statIncome">—</strong></div>
+            <div class="stat"><span>Rendement courant</span><strong id="statYield">—</strong></div>
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head"><h3>Allocation</h3><span class="muted sm" id="allocDrift"></span></div>
+            <div class="alloc-wrap">
+              <div id="allocDonut" class="donut-holder"></div>
+              <div id="allocLegend" class="legend"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Écart à l'objectif</h3><span class="muted sm">cible vs réel</span></div>
+            <div id="allocBars" class="bars"></div>
+          </div>
+        </div>
+
+        <div class="card agent-card">
+          <div class="card-head">
+            <h3>🤖 InvestAI</h3>
+            <span class="muted sm" id="briefDate"></span>
+          </div>
+          <div id="dailyBrief" class="brief">Chargement de l'analyse…</div>
+          <div class="quick-actions" id="quickActions">
+            <button data-q="Analyse mon portefeuille">Analyser mon portefeuille</button>
+            <button data-q="Où investir ce mois-ci ?">Où investir ce mois-ci ?</button>
+            <button data-q="Trouve-moi les meilleurs ETF pour mon profil">Meilleurs ETF</button>
+            <button data-q="Trouve-moi des actions intéressantes actuellement">Meilleures actions</button>
+            <button data-q="Trouve-moi les meilleurs projets Bricks actuellement">Meilleurs projets immobiliers</button>
+            <button data-q="Simule mon patrimoine sur 10 ans">Simuler mon patrimoine</button>
+            <button data-q="Est-ce que je dois rééquilibrer mon portefeuille ?">Dois-je rééquilibrer ?</button>
+            <button data-q="Est-ce que je suis suffisamment diversifié ?">Suis-je diversifié ?</button>
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head"><h3>Top positions</h3><span class="muted sm">poids du portefeuille</span></div>
+            <div id="topPositions" class="mini-table"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Investissements mensuels</h3><span class="muted sm">12 derniers mois</span></div>
+            <div id="monthlyChart"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== AGENT ===== -->
+      <section class="view" data-view="agent">
+        <div class="chat-shell">
+          <div class="chat-log" id="chatLog"></div>
+          <div class="chat-suggest" id="chatSuggest"></div>
+          <form class="chat-input" id="chatForm" autocomplete="off">
+            <input id="chatText" placeholder="Ex : « J'ai 300 € à investir ce mois-ci. »" autocomplete="off">
+            <button class="btn primary" type="submit">Envoyer</button>
+          </form>
+          <div class="chat-foot muted sm">
+            InvestAI analyse d'abord ton portefeuille réel. Les analyses sont des aides à la décision, pas des conseils
+            en investissement personnalisés. <span id="chatMode"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== PORTFOLIO ===== -->
+      <section class="view" data-view="portfolio">
+        <div class="card">
+          <div class="card-head">
+            <h3>Mes positions</h3>
+            <div class="row-actions">
+              <button class="btn sm" id="btnAddHolding">+ Position</button>
+              <button class="btn sm ghost" id="btnAddTx">+ Mouvement</button>
+              <button class="btn sm ghost" id="btnAddCash">+ Liquidités</button>
+            </div>
+          </div>
+          <div id="holdingsTable" class="table-wrap"></div>
+        </div>
+
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head"><h3>Exposition géographique</h3><span class="muted sm">pondérée, look-through ETF</span></div>
+            <div id="geoExposure" class="bars"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Exposition sectorielle</h3><span class="muted sm">pondérée, look-through ETF</span></div>
+            <div id="sectorExposure" class="bars"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Historique des mouvements</h3><span class="muted sm">achats, ventes, dividendes, versements</span></div>
+          <div id="txTable" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <!-- ===== ETF ===== -->
+      <section class="view" data-view="etf">
+        <div class="card">
+          <div class="card-head">
+            <h3>Moteur d'analyse ETF</h3>
+            <div class="row-actions">
+              <select id="etfFilterPea" class="input sm">
+                <option value="all">Tous les comptes</option>
+                <option value="pea">Éligible PEA seulement</option>
+                <option value="cto">CTO / AV</option>
+              </select>
+              <button class="btn sm" id="btnRankEtf">Classer pour mon profil</button>
+              <button class="btn sm ghost" id="btnAddEtf">+ ETF</button>
+            </div>
+          </div>
+          <p class="note">
+            Le classement ne se fonde <strong>jamais</strong> uniquement sur la performance passée. Les frais, la
+            diversification, l'encours, le risque et l'apport marginal à <em>ton</em> portefeuille pèsent davantage.
+          </p>
+          <div id="etfRanking" class="ranking"></div>
+        </div>
+      </section>
+
+      <!-- ===== STOCKS ===== -->
+      <section class="view" data-view="stocks">
+        <div class="card">
+          <div class="card-head">
+            <h3>Moteur d'analyse fondamentale</h3>
+            <div class="row-actions">
+              <input id="stockLookup" class="input sm" placeholder="Ticker (ex : AAPL, MSFT, NVDA)">
+              <button class="btn sm" id="btnAnalyseStock">Analyser</button>
+              <button class="btn sm ghost" id="btnCompare">Comparer la watchlist</button>
+            </div>
+          </div>
+          <p class="note">Score InvestAI sur 100 — croissance, rentabilité, valorisation, dette, qualité, risque.
+          Aucune analyse n'affirme qu'une action va monter.</p>
+          <div id="stockResults" class="ranking"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Watchlist</h3><button class="btn sm ghost" id="btnAddWatch">+ Ajouter</button></div>
+          <div id="watchTable" class="table-wrap"></div>
+        </div>
+      </section>
+
+      <!-- ===== REAL ESTATE ===== -->
+      <section class="view" data-view="realestate">
+        <div class="card warn-card">
+          <strong>⚠ Avertissement</strong>
+          <p>Le rendement annoncé sur un projet d'immobilier participatif (Bricks ou autre) <strong>n'est jamais
+          garanti</strong>. Le capital investi peut être partiellement ou totalement perdu, et les remboursements
+          peuvent être retardés. Ces placements sont peu ou pas liquides avant l'échéance.</p>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h3>Projets immobiliers</h3>
+            <div class="row-actions">
+              <button class="btn sm" id="btnRankBricks">Classer rendement / risque</button>
+              <button class="btn sm ghost" id="btnAddBrick">+ Projet</button>
+            </div>
+          </div>
+          <p class="note">Bricks ne publie pas d'API publique ouverte. Les projets sont saisis manuellement (ou importés
+          depuis un export de ton espace personnel). Le classement n'est jamais fait sur le seul rendement annoncé.</p>
+          <div id="bricksList" class="ranking"></div>
+        </div>
+      </section>
+
+      <!-- ===== OPPORTUNITIES ===== -->
+      <section class="view" data-view="opportunities">
+        <div class="card">
+          <div class="card-head">
+            <h3>⭐ Trouver les meilleures opportunités</h3>
+            <button class="btn" id="btnScan">Lancer l'analyse</button>
+          </div>
+          <p class="note">Recherche du meilleur rapport <strong>qualité / potentiel / risque / valorisation /
+          adéquation à mon portefeuille</strong> — pas de la prochaine action qui « va exploser ».</p>
+          <div id="oppList" class="ranking"></div>
+        </div>
+      </section>
+
+      <!-- ===== PLAN ===== -->
+      <section class="view" data-view="plan">
+        <div class="card">
+          <div class="card-head"><h3>Mon meilleur plan</h3></div>
+          <div class="form-row">
+            <label>Capital disponible <input class="input" type="number" id="planCapital" step="10"></label>
+            <label>Investissement mensuel <input class="input" type="number" id="planMonthly" step="10"></label>
+            <label>Horizon (ans) <input class="input" type="number" id="planHorizon" step="1"></label>
+            <label>Profil
+              <select class="input" id="planProfile">
+                <option value="prudent">Prudent</option>
+                <option value="equilibre">Équilibré</option>
+                <option value="dynamique">Dynamique</option>
+              </select>
+            </label>
+            <button class="btn primary" id="btnBuildPlan">Construire le plan</button>
+          </div>
+          <div id="planOutput"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Dois-je rééquilibrer ?</h3><button class="btn sm" id="btnRebalance">Vérifier</button></div>
+          <div id="rebalanceOutput"></div>
+        </div>
+      </section>
+
+      <!-- ===== SIMULATOR ===== -->
+      <section class="view" data-view="simulator">
+        <div class="card">
+          <div class="card-head"><h3>Simulateur de patrimoine</h3></div>
+          <div class="form-row">
+            <label>Capital initial <input class="input" type="number" id="simInit" step="100"></label>
+            <label>Versement mensuel <input class="input" type="number" id="simMonthly" step="10"></label>
+            <label>Durée (ans) <input class="input" type="number" id="simYears" step="1"></label>
+            <label>Hypothèse centrale (%/an) <input class="input" type="number" id="simRate" step="0.1"></label>
+            <label>Volatilité (%/an) <input class="input" type="number" id="simVol" step="0.5"></label>
+            <button class="btn primary" id="btnSimulate">Simuler</button>
+          </div>
+          <p class="note">Les rendements ci-dessous sont des <strong>hypothèses de travail</strong>, pas des prévisions.
+          Aucun rendement passé ne garantit un rendement futur.</p>
+          <div id="simOutput"></div>
+        </div>
+      </section>
+
+      <!-- ===== JOURNAL ===== -->
+      <section class="view" data-view="journal">
+        <div class="card">
+          <div class="card-head">
+            <h3>Journal des décisions</h3>
+            <button class="btn sm" id="btnReviewJournal">Est-ce que mes analyses étaient correctes ?</button>
+          </div>
+          <p class="note">Chaque recommandation d'InvestAI est enregistrée avec le prix du moment, le score, les risques
+          et ta décision. La relecture évalue la <em>qualité du raisonnement</em>, pas seulement le résultat.</p>
+          <div id="journalReview"></div>
+          <div id="journalList" class="ranking"></div>
+        </div>
+      </section>
+
+      <!-- ===== SETTINGS ===== -->
+      <section class="view" data-view="settings">
+        <div class="card">
+          <div class="card-head"><h3>Mon profil</h3></div>
+          <div class="form-row">
+            <label>Profil de risque
+              <select class="input" id="setProfile">
+                <option value="prudent">Prudent</option>
+                <option value="equilibre">Équilibré (principal)</option>
+                <option value="dynamique">Dynamique</option>
+              </select>
+            </label>
+            <label>Horizon (ans) <input class="input" type="number" id="setHorizon"></label>
+            <label>Budget mensuel (€) <input class="input" type="number" id="setMonthly"></label>
+            <label>Capital disponible (€) <input class="input" type="number" id="setCapital"></label>
+          </div>
+          <p class="note">Le profil <strong>Équilibré</strong> reste la configuration principale de l'application :
+          il est restauré comme référence dans toutes les analyses de plan et de rééquilibrage.</p>
+          <button class="btn sm ghost" id="btnResetProfile">Revenir au profil équilibré par défaut</button>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h3>Allocation cible</h3><span class="muted sm" id="targetSum"></span></div>
+          <div class="form-row">
+            <label>ETF % <input class="input" type="number" id="tgtEtf"></label>
+            <label>Actions % <input class="input" type="number" id="tgtActions"></label>
+            <label>Immobilier % <input class="input" type="number" id="tgtImmo"></label>
+            <label>Liquidités % <input class="input" type="number" id="tgtCash"></label>
+            <button class="btn sm" id="btnSaveTarget">Enregistrer</button>
+          </div>
+        </div>
+
+        <!-- Mode SERVEUR : les clés vivent sur le VPS, rien à saisir ici -->
+        <div class="card" id="serverPanel" hidden>
+          <div class="card-head"><h3>Serveur</h3><span class="muted sm" id="srvVersion"></span></div>
+          <p class="note">Tes clés d'API sont configurées dans les variables d'environnement de ton serveur
+          (Dokploy → Environment). Elles ne transitent <strong>jamais</strong> par ton navigateur. Ton portefeuille
+          est stocké sur ton VPS : il te suit automatiquement d'un appareil à l'autre.</p>
+          <div class="provider-list" id="srvProviders"></div>
+          <div class="kv" id="srvStats"></div>
+          <div class="row-actions">
+            <button class="btn sm" id="btnServerRefresh">Rafraîchir les cours maintenant</button>
+            <button class="btn sm ghost" id="btnLogout">Se déconnecter</button>
+          </div>
+        </div>
+
+        <!-- Mode LOCAL : saisie manuelle des clés -->
+        <div class="card" id="localKeysPanel">
+          <div class="card-head"><h3>Sources de données de marché</h3></div>
+          <p class="note">Clés d'API <strong>gratuites</strong>, stockées uniquement sur cette machine (localStorage).
+          Elles ne quittent ton navigateur que pour appeler le fournisseur concerné.</p>
+          <div class="provider-list">
+            <div class="provider">
+              <div>
+                <strong>Twelve Data</strong> <span class="muted sm">prix, historiques, volatilité — 800 req/jour gratuit</span>
+                <a href="https://twelvedata.com/pricing" target="_blank" rel="noopener">obtenir une clé</a>
+              </div>
+              <input class="input" id="keyTwelve" type="password" placeholder="clé API">
+            </div>
+            <div class="provider">
+              <div>
+                <strong>Finnhub</strong> <span class="muted sm">fondamentaux actions, profils, métriques — gratuit</span>
+                <a href="https://finnhub.io/register" target="_blank" rel="noopener">obtenir une clé</a>
+              </div>
+              <input class="input" id="keyFinnhub" type="password" placeholder="clé API">
+            </div>
+            <div class="provider">
+              <div>
+                <strong>Alpha Vantage</strong> <span class="muted sm">secours — 25 req/jour gratuit</span>
+                <a href="https://www.alphavantage.co/support/#api-key" target="_blank" rel="noopener">obtenir une clé</a>
+              </div>
+              <input class="input" id="keyAlpha" type="password" placeholder="clé API">
+            </div>
+            <div class="provider">
+              <div>
+                <strong>Frankfurter (BCE)</strong> <span class="muted sm">taux de change — sans clé, actif par défaut</span>
+              </div>
+              <input class="input" value="aucune clé requise" disabled>
+            </div>
+          </div>
+          <button class="btn sm" id="btnSaveKeys">Enregistrer les clés</button>
+          <button class="btn sm ghost" id="btnTestKeys">Tester les connexions</button>
+          <div id="keyTest" class="muted sm"></div>
+        </div>
+
+        <div class="card" id="localAiPanel">
+          <div class="card-head"><h3>Chat en langage naturel (optionnel)</h3></div>
+          <p class="note">Sans clé, InvestAI fonctionne <strong>entièrement en local et gratuitement</strong> : il
+          comprend tes questions par analyse de mots-clés et répond avec le moteur d'analyse déterministe. Avec une clé
+          Anthropic, la compréhension du langage devient complète — le moteur d'analyse et les chiffres restent
+          exactement les mêmes.</p>
+          <div class="provider">
+            <div><strong>Clé API Anthropic</strong> <span class="muted sm">facultative</span></div>
+            <input class="input" id="keyAnthropic" type="password" placeholder="sk-ant-…">
+          </div>
+          <button class="btn sm" id="btnSaveAnthropic">Enregistrer</button>
+        </div>
+
+        <div class="card danger-card">
+          <div class="card-head"><h3>Données</h3></div>
+          <p class="note">Toutes tes données restent sur cette machine. Aucun compte, aucun serveur.</p>
+          <button class="btn sm ghost" id="btnSeed">Charger un jeu de démonstration</button>
+          <button class="btn sm danger" id="btnWipe">Tout effacer</button>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- ============ MODAL ============ -->
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modal">
+    <div class="modal-head"><h3 id="modalTitle">…</h3><button class="x" id="modalClose">✕</button></div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="js/api.js"></script>
+<script src="js/data.js"></script>
+<script src="js/store.js"></script>
+<script src="js/market.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/agent.js"></script>
+<script src="js/charts.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
