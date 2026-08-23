@@ -537,6 +537,20 @@ svg{display:block;overflow:visible}
 .v-tab.active{color:var(--ink);border-bottom-color:var(--c1)}
 .v-paste{width:100%;font-family:var(--mono,monospace);font-size:11px;line-height:1.5;resize:vertical}
 
+.v-target{display:flex;gap:9px;align-items:flex-start;margin-top:14px;padding:11px 13px;
+  border:1px solid var(--rule-2);border-radius:var(--r);background:var(--surface-2);font-size:11.5px}
+.v-target input{margin-top:2px;width:auto;flex:none}
+.tag.stake{color:var(--pos);border-color:#1e4433;background:var(--pos-soft)}
+.tag.yield{color:var(--c4);border-color:#1e4440;background:#0f1d1b}
+
+/* ---------------------------------------------------------- alertes de prix */
+#btnAlerts .badge{display:inline-block;min-width:15px;padding:0 4px;margin-left:3px;
+  border-radius:8px;background:var(--neg);color:#fff;font-size:9px;font-weight:700;
+  line-height:15px;text-align:center}
+#btnAlerts.has-alerts{border-color:var(--neg);color:var(--neg)}
+.tag.fired{color:var(--pos);border-color:#1e4433;background:var(--pos-soft)}
+.tag.watch{color:var(--c1);border-color:#254156;background:var(--navy-soft)}
+
 </style>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
 </head>
@@ -607,6 +621,7 @@ svg{display:block;overflow:visible}
       </div>
       <div class="topbar-right">
         <span class="muted sm" id="saveState"></span>
+        <button class="btn ghost sm" id="btnAlerts" title="Mes alertes de prix">⏰ Alertes</button>
         <button class="btn ghost sm" id="btnRefresh" title="Rafraîchir les prix depuis les fournisseurs de données">↻ Actualiser</button>
         <button class="btn ghost sm" id="btnExport" title="Exporter toutes mes données">⤓ Export</button>
         <label class="btn ghost sm" title="Importer une sauvegarde">⤒ Import<input type="file" id="fileImport" accept="application/json" hidden></label>
@@ -706,6 +721,21 @@ svg{display:block;overflow:visible}
             </div>
           </div>
           <div id="holdingsTable" class="table-wrap"></div>
+        </div>
+
+        <div class="card" id="alertsCard">
+          <div class="card-head">
+            <h3>Alertes de prix</h3>
+            <div class="row-actions">
+              <span class="muted sm" id="alertsNotifState"></span>
+              <button class="btn sm" id="btnAddAlert">+ Alerte</button>
+            </div>
+          </div>
+          <div id="alertsList" class="table-wrap"></div>
+          <p class="note">Les alertes sont vérifiées à chaque rafraîchissement des cours —
+          en mode serveur, y compris quand aucun navigateur n'est ouvert. Une notification
+          système n'apparaît que si cet onglet est ouvert et que tu as accordé la permission.
+          <b>Aucun ordre n'est jamais passé automatiquement.</b></p>
         </div>
 
         <div class="grid two">
@@ -1413,7 +1443,9 @@ svg{display:block;overflow:visible}
     { t:'FTM',  id:'fantom',       n:'Fantom',         cap:'small' },
     { t:'XTZ',  id:'tezos',        n:'Tezos',          cap:'small' },
     { t:'EGLD', id:'elrond-erd-2', n:'MultiversX',     cap:'small' },
-    { t:'KAS',  id:'kaspa',        n:'Kaspa',          cap:'small' }
+    { t:'KAS',  id:'kaspa',        n:'Kaspa',          cap:'small' },
+    { t:'CRO',  id:'crypto-com-chain',  n:'Cronos',   cap:'small' },
+    { t:'TRUMP',id:'official-trump',    n:'OFFICIAL TRUMP', cap:'small' }
   ];
   const CRYPTO_BY_TICKER = {};
   CRYPTO_CATALOG.forEach(c => CRYPTO_BY_TICKER[c.t] = c);
@@ -1470,6 +1502,7 @@ svg{display:block;overflow:visible}
       transactions: [],  // achats/ventes/dividendes/versements
       journal: [],       // journal des décisions
       watchlist: [],     // tickers suivis
+      alerts: [],        // alertes de prix (voir alerts.js)
       etfExtra: [],      // ETF ajoutés à la main au catalogue
       settings: {
         keys: { twelvedata: '', finnhub: '', alphavantage: '', anthropic: '' },
@@ -1582,7 +1615,9 @@ svg{display:block;overflow:visible}
     const rec = Object.assign({
       id: uid(), type: 'etf', ticker: '', name: '', isin: '', quantity: 0, avgPrice: 0,
       currency: 'EUR', account: 'CTO', lastPrice: null, lastPriceDate: null, lastPriceSource: null,
-      catalogId: null, sector: null, region: null, addedAt: todayISO()
+      catalogId: null, sector: null, region: null, addedAt: todayISO(),
+      // staking / rendement d'immobilisation (cryptos surtout)
+      stakingPct: null, stakingFrom: null, stakingUntil: null
     }, h);
     state.holdings.push(rec);
     save(); return rec;
@@ -1638,6 +1673,39 @@ svg{display:block;overflow:visible}
   function updateJournal(id, patch) { const j = state.journal.find(x => x.id === id); if (j) { Object.assign(j, patch); save(); } return j; }
   function removeJournal(id) { state.journal = state.journal.filter(x => x.id !== id); save(); }
 
+  /* ------------------------------------------------------------- alertes */
+  /** Une alerte se déclenche quand le cours FRANCHIT le seuil dans le sens
+   *  choisi. Elle ne se redéclenche pas tant qu'elle n'est pas réarmée :
+   *  sinon un cours qui oscille autour du seuil alerterait sans fin. */
+  function addAlert(a) {
+    const rec = Object.assign({
+      id: uid(), ticker: '', kind: 'above', price: 0, note: '',
+      active: true, createdAt: todayISO(),
+      triggeredAt: null, triggeredPrice: null, seen: false
+    }, a);
+    rec.ticker = String(rec.ticker || '').toUpperCase();
+    rec.price = Number(rec.price) || 0;
+    if (!rec.ticker || rec.price <= 0) return null;
+    state.alerts.push(rec); save(); return rec;
+  }
+  function updateAlert(id, patch) {
+    const a = state.alerts.find(x => x.id === id);
+    if (a) { Object.assign(a, patch); save(); }
+    return a;
+  }
+  function removeAlert(id) { state.alerts = state.alerts.filter(x => x.id !== id); save(); }
+  /** Réarme une alerte déclenchée : elle repart en surveillance. */
+  function rearmAlert(id) {
+    return updateAlert(id, { triggeredAt: null, triggeredPrice: null, seen: false, active: true });
+  }
+  const pendingAlerts = () => state.alerts.filter(a => a.triggeredAt && !a.seen);
+  function markAlertsSeen() {
+    let n = 0;
+    state.alerts.forEach(a => { if (a.triggeredAt && !a.seen) { a.seen = true; n++; } });
+    if (n) save();
+    return n;
+  }
+
   function addWatch(w) {
     if (state.watchlist.some(x => x.ticker.toUpperCase() === String(w.ticker).toUpperCase())) return null;
     const rec = Object.assign({ id: uid(), ticker: '', name: '', kind: 'action' }, w);
@@ -1676,10 +1744,13 @@ svg{display:block;overflow:visible}
       const p = priceOf(h);
       const value = (Number(h.quantity) || 0) * p.price;
       const cost = costOf(h);
-      const pl = value - cost;
+      /* Sans prix de revient, il n'y a PAS de plus-value : la renvoyer à
+         `value - 0` afficherait la valeur entière comme un gain. On renvoie
+         null, et l'interface montre « — » plutôt qu'un chiffre faux. */
+      const pl = cost > 0 ? value - cost : null;
       return Object.assign({}, h, {
         _price: p.price, _live: p.live, _priceDate: p.date, _priceSource: p.source,
-        _value: value, _cost: cost, _pl: pl, _plPct: cost > 0 ? (pl / cost) * 100 : 0
+        _value: value, _cost: cost, _pl: pl, _plPct: cost > 0 ? (pl / cost) * 100 : null
       });
     });
 
@@ -1696,10 +1767,19 @@ svg{display:block;overflow:visible}
     const invested = etfValue + stockValue + cryptoValue + bricksValue;
     const total = invested;
 
-    const marketCost = holdings.reduce((s, h) => s + h._cost, 0);
-    const cost = marketCost + bricksValue;
-    const pl = (etfValue + stockValue + cryptoValue) - marketCost;
-    const plPct = marketCost > 0 ? (pl / marketCost) * 100 : 0;
+    /* Plus-value calculée UNIQUEMENT sur les lignes ayant un prix de revient.
+       Une position importée depuis une capture d'écran n'en a souvent aucun :
+       la compter à coût nul afficherait la totalité de sa valeur comme un gain.
+       `plCoverage` dit quelle part du portefeuille la plus-value couvre. */
+    const priced = holdings.filter(h => h._cost > 0 && h._pl !== null);
+    const costKnown = priced.reduce((s, h) => s + h._cost, 0);
+    const valueKnown = priced.reduce((s, h) => s + h._value, 0);
+    const marketValue = etfValue + stockValue + cryptoValue;
+    const cost = holdings.reduce((s, h) => s + h._cost, 0) + bricksValue;
+    const pl = valueKnown - costKnown;
+    const plPct = costKnown > 0 ? (pl / costKnown) * 100 : 0;
+    const plCoverage = marketValue > 0 ? (valueKnown / marketValue) * 100 : 100;
+    const unpriced = holdings.filter(h => h._cost <= 0 && h._value > 0);
 
     const alloc = { etf: 0, actions: 0, crypto: 0, immobilier: 0 };
     if (total > 0) {
@@ -1710,7 +1790,8 @@ svg{display:block;overflow:visible}
     }
 
     return {
-      holdings, etfValue, stockValue, cryptoValue, bricksValue, invested, total, cost, pl, plPct, alloc,
+      holdings, etfValue, stockValue, cryptoValue, bricksValue, invested, total, cost, pl, plPct,
+      plCoverage, unpriced, alloc,
       target: normaliseTarget(state.profile.target),
       profile: G.DATA.PROFILES[state.profile.riskProfile] || G.DATA.PROFILES.equilibre
     };
@@ -1746,12 +1827,23 @@ svg{display:block;overflow:visible}
     const bricksIncome = state.bricks
       .filter(b => b.status !== 'remboursé' && b.status !== 'perdu')
       .reduce((s, b) => s + (Number(b.amount) || 0) * (Number(b.yieldPct) || 0) / 100, 0);
+    /* Staking : rendement annoncé × valeur immobilisée. Comme pour l'immobilier,
+       c'est une ESPÉRANCE annoncée par la plateforme, pas un revenu encaissé —
+       les deux sont donc comptés séparément de `realised`. */
+    const stakingIncome = snap.holdings
+      .filter(h => Number(h.stakingPct) > 0)
+      .reduce((s, h) => s + h._value * Number(h.stakingPct) / 100, 0);
     const realised = incomeLast12m();
     const base = snap.invested;
     return {
-      realised, expectedRealEstate: bricksIncome,
-      pct: base > 0 ? ((realised + bricksIncome) / base) * 100 : 0
+      realised, expectedRealEstate: bricksIncome, expectedStaking: stakingIncome,
+      pct: base > 0 ? ((realised + bricksIncome + stakingIncome) / base) * 100 : 0
     };
+  }
+  /** Positions immobilisées dont la date de déblocage n'est pas passée. */
+  function lockedHoldings() {
+    const today = todayISO();
+    return state.holdings.filter(h => h.stakingUntil && h.stakingUntil > today);
   }
 
   /* ---------------------------------------------------------- import/export */
@@ -1783,9 +1875,10 @@ svg{display:block;overflow:visible}
     addTransaction, removeTransaction,
     addJournal, updateJournal, removeJournal,
     addWatch, removeWatch,
+    addAlert, updateAlert, removeAlert, rearmAlert, pendingAlerts, markAlertsSeen,
     etfCatalog, findCatalog, cryptoMeta, normaliseTarget, CLASSES,
     priceOf, valueOf, costOf, snapshot,
-    investedInMonth, monthlySeries, incomeLast12m, currentYield,
+    investedInMonth, monthlySeries, incomeLast12m, currentYield, lockedHoldings,
     exportJSON, importJSON, wipe, blankState
   };
 })(window);
@@ -1916,7 +2009,7 @@ svg{display:block;overflow:visible}
   }
   async function quoteCoinGecko(c) {
     const vs = c.quote.toLowerCase();
-    const j = await throttled('coingecko', 2500, () => getJSON(
+    const j = await throttled('coingecko', 3500, () => getJSON(
       `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(c.id)}` +
       `&vs_currencies=${encodeURIComponent(vs)}&include_24hr_change=true&include_last_updated_at=true`, 12000));
     const row = j && j[c.id];
@@ -1929,7 +2022,7 @@ svg{display:block;overflow:visible}
     };
   }
   async function seriesCoinGecko(c) {
-    const j = await throttled('coingecko', 2500, () => getJSON(
+    const j = await throttled('coingecko', 3500, () => getJSON(
       `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(c.id)}/market_chart` +
       `?vs_currency=${encodeURIComponent(c.quote.toLowerCase())}&days=365&interval=daily`, 20000));
     if (!j || !Array.isArray(j.prices) || j.prices.length < 30) return null;
@@ -1937,6 +2030,47 @@ svg{display:block;overflow:visible}
       closes: j.prices.map(([ms, v]) => ({ d: G.Store.localISO(new Date(ms)), c: num(v) })).filter(x => x.c != null),
       src: 'CoinGecko'
     };
+  }
+
+  /** Un seul appel CoinGecko pour toutes les cryptos (voir providers.js côté
+   *  serveur : l'offre gratuite coupe si on les interroge une par une). */
+  async function primeCryptoQuotes(symbols, opts) {
+    opts = opts || {};
+    const wanted = [];
+    for (const sym of symbols) {
+      const k = String(sym).toUpperCase();
+      const c = cryptoOf(k);
+      if (!c) continue;
+      if (!opts.force && fresh(cache().quotes[k], TTL.quote)) continue;
+      wanted.push({ k, c });
+    }
+    if (!wanted.length) return 0;
+    const parDevise = {};
+    wanted.forEach(w => (parDevise[w.c.quote] = parDevise[w.c.quote] || []).push(w));
+    let n = 0;
+    for (const [devise, lot] of Object.entries(parDevise)) {
+      const ids = [...new Set(lot.map(w => w.c.id))].join(',');
+      const vs = devise.toLowerCase();
+      let j;
+      try {
+        j = await throttled('coingecko', 3500, () => getJSON(
+          `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}` +
+          `&vs_currencies=${encodeURIComponent(vs)}&include_24hr_change=true&include_last_updated_at=true`, 15000));
+      } catch (e) { continue; }
+      for (const w of lot) {
+        const row = j && j[w.c.id];
+        const price = num(row && row[vs]);
+        if (price == null) continue;
+        cache().quotes[w.k] = { ts: Date.now(), v: {
+          price, currency: w.c.quote, changePct: num(row[vs + '_24h_change']),
+          name: w.c.base, source: 'CoinGecko',
+          asOf: row.last_updated_at ? G.Store.localISO(new Date(row.last_updated_at * 1000)) : G.Store.todayISO()
+        }};
+        n++;
+      }
+    }
+    G.Store.save();
+    return n;
   }
 
   /** Cotation : essaie chaque fournisseur configuré, garde le premier succès. */
@@ -2180,9 +2314,11 @@ svg{display:block;overflow:visible}
     }
     // on n'interroge que ce qui est réellement cotable par un fournisseur actif
     const list = st.holdings.filter(h => h.ticker && canQuote(h.ticker));
+    await primeCryptoQuotes(list.map(h => h.ticker), { force: true });
     let done = 0, ok = 0;
     for (const h of list) {
-      const q = await quote(h.ticker, { force: true });
+      // idem côté navigateur : ne pas re-forcer ce que le lot vient de récupérer
+      const q = await quote(h.ticker, { force: !cryptoOf(h.ticker) });
       let written = false;
       if (q) {
         const conv = await toHoldingCurrency(q, h);
@@ -2261,9 +2397,266 @@ svg{display:block;overflow:visible}
   }
 
   G.Market = {
-    quote, series, fundamentals, fx, refreshHoldings, canQuote, cryptoOf,
+    quote, series, fundamentals, fx, refreshHoldings, canQuote, cryptoOf, primeCryptoQuotes,
     hasProvider, providerStatus, testKeys, computeStats
   };
+})(window);
+
+
+/* ===== alerts-rules.js ===== */
+/* ============================================================================
+   alerts.js — Évaluation des alertes de prix.
+
+   Fonctions PURES, sans aucun import. SOURCE UNIQUE : ce fichier est chargé
+   tel quel par le navigateur (balise <script>) et par le serveur
+   (`require('../public/js/alerts-rules')`). Une seule copie, donc aucune
+   dérive possible — deux évaluations divergentes seraient pires que pas
+   d'alerte du tout.
+   ========================================================================== */
+'use strict';
+
+/** Le seuil est-il franchi ? `above` : le cours l'atteint ou le dépasse. */
+function crosses(alert, price) {
+  if (!alert || !alert.active || alert.triggeredAt) return false;
+  const seuil = Number(alert.price);
+  const p = Number(price);
+  if (!isFinite(seuil) || !isFinite(p) || seuil <= 0 || p <= 0) return false;
+  return alert.kind === 'below' ? p <= seuil : p >= seuil;
+}
+
+/**
+ * Évalue toutes les alertes contre les cours fournis.
+ * @param {Array}  alerts  le tableau d'alertes (MUTÉ : triggeredAt renseigné)
+ * @param {Object} prices  { TICKER: prix }
+ * @param {string} nowISO  horodatage à inscrire
+ * @returns {Array} les alertes nouvellement déclenchées
+ */
+function evaluate(alerts, prices, nowISO) {
+  const fired = [];
+  if (!Array.isArray(alerts)) return fired;
+  for (const a of alerts) {
+    if (!a || !a.ticker) continue;
+    const p = prices[String(a.ticker).toUpperCase()];
+    if (p === undefined || p === null) continue;
+    if (!crosses(a, p)) continue;
+    a.triggeredAt = nowISO || new Date().toISOString();
+    a.triggeredPrice = Number(p);
+    a.seen = false;
+    fired.push(a);
+  }
+  return fired;
+}
+
+/** Phrase lisible, utilisée dans les journaux comme dans les notifications. */
+function describe(a) {
+  const sens = a.kind === 'below' ? 'est descendu à' : 'a atteint';
+  const seuil = a.kind === 'below' ? 'sous' : 'au-dessus de';
+  return a.triggeredPrice != null
+    ? `${a.ticker} ${sens} ${fmt(a.triggeredPrice)} € (seuil ${seuil} ${fmt(a.price)} €)`
+    : `${a.ticker} ${seuil} ${fmt(a.price)} €`;
+}
+function fmt(n) {
+  const v = Number(n);
+  if (!isFinite(v)) return '—';
+  // les cryptos vont de 0,05 € à 60 000 € : on adapte les décimales
+  const d = Math.abs(v) >= 100 ? 0 : Math.abs(v) >= 1 ? 2 : 4;
+  return v.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+
+const API = { crosses, evaluate, describe, fmt };
+if (typeof module !== 'undefined' && module.exports) module.exports = API;
+if (typeof window !== 'undefined') window.AlertRules = API;
+
+
+/* ===== alerts.js ===== */
+/* ============================================================================
+   alerts.js — Alertes de prix : interface, notifications, évaluation locale.
+
+   La RÈGLE de déclenchement vit dans alerts-rules.js, partagée avec le serveur.
+   Ce fichier ne fait que l'appliquer et la donner à voir.
+
+   Ce que l'application sait faire, et ce qu'elle ne sait pas :
+   · en mode serveur, les alertes sont évaluées à chaque rafraîchissement
+     automatique — donc même si aucun navigateur n'est ouvert ;
+   · une notification système n'apparaît que si cet onglet est ouvert et que
+     tu as accordé la permission. Il n'y a PAS de notification push sur
+     téléphone quand l'application est fermée : cela demanderait un service de
+     push, que ce projet auto-hébergé n'a pas.
+   ========================================================================== */
+(function (G) {
+  'use strict';
+  const R = G.AlertRules;
+  const $ = s => document.querySelector(s);
+  const esc = s => G.UI.esc(s);
+
+  /* ------------------------------------------------------ notifications */
+  function canNotify() { return 'Notification' in window; }
+  function notifyState() { return canNotify() ? Notification.permission : 'indisponible'; }
+
+  async function askPermission() {
+    if (!canNotify()) { G.UI.toast("Ce navigateur ne gère pas les notifications.", 'err'); return false; }
+    if (Notification.permission === 'granted') return true;
+    if (Notification.permission === 'denied') {
+      G.UI.toast("Les notifications sont bloquées pour ce site. Réactive-les dans les réglages du navigateur.", 'err');
+      return false;
+    }
+    const p = await Notification.requestPermission();
+    return p === 'granted';
+  }
+
+  function notify(alert) {
+    if (!canNotify() || Notification.permission !== 'granted') return;
+    try {
+      new Notification('InvestAI — alerte de prix', {
+        body: R.describe(alert) + (alert.note ? '\n' + alert.note : ''),
+        tag: 'mia-alert-' + alert.id            // pas de doublon pour la même alerte
+      });
+    } catch (e) { /* certains navigateurs refusent hors service worker */ }
+  }
+
+  /* -------------------------------------------------------- évaluation */
+  /** Évalue les alertes contre les cours connus des positions et de la
+   *  watchlist. Appelée après chaque rafraîchissement. */
+  function check(silencieux) {
+    const st = G.Store.state;
+    const prices = {};
+    G.Store.snapshot().holdings.forEach(h => {
+      if (h.ticker && h._live) prices[String(h.ticker).toUpperCase()] = h._price;
+    });
+    // les alertes peuvent porter sur un ticker non détenu : on regarde le cache
+    (st.alerts || []).forEach(a => {
+      const k = String(a.ticker || '').toUpperCase();
+      if (prices[k] !== undefined) return;
+      const c = st.cache && st.cache.quotes && st.cache.quotes[k];
+      if (c && c.v && c.v.price) prices[k] = c.v.price;
+    });
+
+    const fired = R.evaluate(st.alerts, prices, new Date().toISOString());
+    if (fired.length) {
+      G.Store.save(true);
+      if (!silencieux) {
+        fired.forEach(notify);
+        G.UI.toast(fired.length === 1 ? R.describe(fired[0])
+                                      : `${fired.length} alertes de prix déclenchées.`, 'ok');
+      }
+    }
+    render();
+    return fired;
+  }
+
+  /* ------------------------------------------------------------- rendu */
+  /** Pastille du bandeau : nombre d'alertes déclenchées non lues. */
+  function renderBadge() {
+    const n = G.Store.pendingAlerts().length;
+    const b = $('#btnAlerts'); if (!b) return;
+    b.classList.toggle('has-alerts', n > 0);
+    b.innerHTML = '⏰ Alertes' + (n ? ` <span class="badge">${n}</span>` : '');
+  }
+
+  function render() {
+    renderBadge();
+    const box = $('#alertsList'); if (!box) return;
+    const st = G.Store.state;
+    const list = (st.alerts || []).slice().sort((a, b) => {
+      if (!!b.triggeredAt - !!a.triggeredAt) return !!b.triggeredAt - !!a.triggeredAt;
+      return String(a.ticker).localeCompare(String(b.ticker));
+    });
+    if (!list.length) {
+      box.innerHTML = `<div class="empty">Aucune alerte.<br>
+        Clique sur <b>+ Alerte</b> pour être prévenu quand un cours atteint ton seuil.</div>`;
+      return;
+    }
+    const cours = {};
+    G.Store.snapshot().holdings.forEach(h => { if (h._live) cours[h.ticker] = h._price; });
+
+    box.innerHTML = `<table class="tbl"><thead><tr>
+        <th>État</th><th>Actif</th><th>Condition</th><th class="num">Cours actuel</th>
+        <th class="num">Écart</th><th>Note</th><th></th>
+      </tr></thead><tbody>${list.map(a => {
+        const p = cours[a.ticker];
+        const ecart = (p && a.price) ? (p / a.price - 1) * 100 : null;
+        const etat = a.triggeredAt
+          ? `<span class="tag fired">✔ déclenchée</span>`
+          : a.active ? `<span class="tag watch">en veille</span>`
+                     : `<span class="tag">en pause</span>`;
+        return `<tr data-aid="${a.id}">
+          <td>${etat}${a.triggeredAt ? `<span class="sub">${esc(a.triggeredAt.slice(0, 10))} · ${R.fmt(a.triggeredPrice)} €</span>` : ''}</td>
+          <td><span class="tick">${esc(a.ticker)}</span></td>
+          <td>${a.kind === 'below' ? 'descend sous' : 'atteint'} <b>${R.fmt(a.price)} €</b></td>
+          <td class="num">${p ? R.fmt(p) + ' €' : '<span class="muted">—</span>'}</td>
+          <td class="num ${ecart === null ? 'muted' : ecart >= 0 ? 'pos' : 'neg'}">${
+            ecart === null ? '—' : (ecart >= 0 ? '+' : '') + ecart.toFixed(1) + ' %'}</td>
+          <td><span class="sub">${esc(a.note || '')}</span></td>
+          <td class="num">
+            ${a.triggeredAt ? `<button class="icon-btn" data-act="rearm-a" data-id="${a.id}" title="Réarmer">↻</button>` : ''}
+            <button class="icon-btn" data-act="edit-a" data-id="${a.id}">✎</button>
+            <button class="icon-btn" data-act="del-a" data-id="${a.id}">✕</button>
+          </td></tr>`;
+      }).join('')}</tbody></table>`;
+  }
+
+  /* ---------------------------------------------------------- formulaire */
+  function modal(id, prefill) {
+    const a = id ? G.Store.state.alerts.find(x => x.id === id) : null;
+    const F = G.UI.field;
+    const tickers = [...new Set(G.Store.state.holdings.map(h => h.ticker).filter(Boolean))];
+    const t = a ? a.ticker : (prefill && prefill.ticker) || tickers[0] || '';
+    const cours = (G.Store.snapshot().holdings.find(h => h.ticker === t) || {})._price;
+
+    const body = `<div class="field-grid">
+      ${F('ticker', 'Actif', { type: 'select', value: t,
+        options: tickers.length ? tickers.map(x => ({ v: x, l: x })) : [{ v: '', l: '— aucune position —' }] })}
+      ${F('kind', 'Condition', { type: 'select', value: a ? a.kind : 'above',
+        options: [{ v: 'above', l: 'Le cours atteint ou dépasse' }, { v: 'below', l: 'Le cours descend sous' }] })}
+      ${F('price', 'Seuil (€)', { type: 'number', value: a ? a.price : '', ph: cours ? R.fmt(cours) : '2.50' })}
+      ${F('note', 'Note (facultatif)', { full: true, value: a ? a.note : '',
+        ph: 'ce que je compte faire à ce niveau' })}
+    </div>
+    ${cours ? `<p class="note" style="margin-top:12px">Cours actuel de ${esc(t)} : <b>${R.fmt(cours)} €</b>.</p>` : ''}
+    <p class="note">Une alerte prévient, elle ne décide pas et ne passe aucun ordre.
+    Elle se déclenche une seule fois, puis reste à réarmer.</p>`;
+
+    G.UI.openModal(id ? "Modifier l'alerte" : 'Nouvelle alerte de prix', body, null, () => {
+      const v = G.UI.modalValues();
+      v.price = Number(String(v.price).replace(',', '.'));
+      if (!v.ticker) { G.UI.toast('Choisis un actif.', 'err'); return false; }
+      if (!(v.price > 0)) { G.UI.toast('Saisis un seuil supérieur à zéro.', 'err'); return false; }
+      if (id) G.Store.rearmAlert(id) && G.Store.updateAlert(id, v);
+      else G.Store.addAlert(v);
+      G.UI.toast('Alerte enregistrée.', 'ok');
+      render();
+      askPermission();          // proposée au moment où elle devient utile
+    });
+  }
+
+  /* ------------------------------------------------------------ câblage */
+  function wire() {
+    const add = $('#btnAddAlert'); if (add) add.addEventListener('click', () => modal());
+    const bell = $('#btnAlerts');
+    if (bell) bell.addEventListener('click', () => {
+      G.UI.go('portfolio');
+      G.Store.markAlertsSeen();
+      renderBadge();
+      const el = $('#alertsCard'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    document.addEventListener('click', e => {
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      const id = b.dataset.id;
+      if (b.dataset.act === 'edit-a') modal(id);
+      else if (b.dataset.act === 'del-a') { if (confirm('Supprimer cette alerte ?')) { G.Store.removeAlert(id); render(); } }
+      else if (b.dataset.act === 'rearm-a') { G.Store.rearmAlert(id); render(); G.UI.toast('Alerte réarmée.', 'ok'); }
+    });
+    // au démarrage : ce que le serveur a déclenché pendant notre absence
+    const enAttente = G.Store.pendingAlerts();
+    if (enAttente.length) {
+      G.UI.toast(enAttente.length === 1
+        ? R.describe(enAttente[0])
+        : `${enAttente.length} alertes se sont déclenchées depuis ta dernière visite.`, 'ok');
+    }
+    render();
+  }
+
+  G.Alerts = { wire, check, render, renderBadge, modal, askPermission, notifyState };
 })(window);
 
 
@@ -2289,6 +2682,9 @@ svg{display:block;overflow:visible}
 
   let pending = [];               // positions extraites, en attente de validation
   let files = [];                 // images choisies
+  let proposedTarget = null;      // cible d'allocation proposée par le relevé
+
+  const LBL = { etf: 'ETF', actions: 'Actions', crypto: 'Crypto', immobilier: 'Immobilier' };
 
   /* ------------------------------------------------------------ disponible ? */
   function enabled() {
@@ -2377,8 +2773,23 @@ svg{display:block;overflow:visible}
     return {
       positions: Array.isArray(o.positions) ? o.positions.map(clean).filter(Boolean) : [],
       warnings: Array.isArray(o.warnings) ? o.warnings.map(String) : [],
-      detected: o.detected || null
+      detected: o.detected || null,
+      target: cleanTarget(o.target)
     };
+  }
+
+  /** Cible d'allocation optionnelle : n'est retenue que si les quatre classes
+   *  sont présentes et totalisent 100. Une cible bancale est ignorée plutôt
+   *  que corrigée en douce. */
+  function cleanTarget(t) {
+    if (!t || typeof t !== 'object') return null;
+    const out = {};
+    for (const k of G.Store.CLASSES) {
+      const n = numOrNull(t[k]);
+      if (n === null || n < 0 || n > 100) return null;
+      out[k] = n;
+    }
+    return Math.abs(G.Store.CLASSES.reduce((a, k) => a + out[k], 0) - 100) < 0.01 ? out : null;
   }
 
   const numOrNull = v => {
@@ -2410,7 +2821,9 @@ svg{display:block;overflow:visible}
         ? String(p.currency).toUpperCase() : 'EUR',
       account: String(p.account || '').trim().slice(0, 30) || 'Autre',
       confidence: ['haute', 'moyenne', 'basse'].includes(p.confidence) ? p.confidence : 'moyenne',
-      source: String(p.source || '').slice(0, 120)
+      source: String(p.source || '').slice(0, 120),
+      stakingPct: numOrNull(p.stakingPct),
+      stakingUntil: /^\d{4}-\d{2}-\d{2}$/.test(String(p.stakingUntil || '')) ? p.stakingUntil : null
     };
   }
 
@@ -2455,7 +2868,8 @@ svg{display:block;overflow:visible}
           placeholder='{"positions":[
   {"type":"crypto","ticker":"BTC","name":"Bitcoin","quantity":0.0842,"avgPrice":52000,"currency":"EUR","account":"Bitstack"},
   {"type":"crypto","ticker":"ETH","name":"Ethereum","quantity":1.35,"avgPrice":2100,"currency":"EUR","account":"Binance"}
-]}'></textarea>
+],
+"target":{"etf":45,"actions":15,"crypto":20,"immobilier":20}}'></textarea>
         <div class="row-actions" style="margin-top:12px;justify-content:flex-end">
           <button class="btn primary" id="vRead" type="button">Lire le relevé</button>
         </div>
@@ -2581,6 +2995,7 @@ svg{display:block;overflow:visible}
 
   /* ------------------------------------------------------------ validation */
   function showReview(res) {
+    proposedTarget = res.target || null;
     const body = `
       <p class="note">${res.detected ? `Plateforme reconnue : <b>${esc(res.detected)}</b>. ` : ''}
       <b>${pending.length}</b> position(s) lue(s). Vérifie chaque ligne : une lecture d'image
@@ -2590,6 +3005,12 @@ svg{display:block;overflow:visible}
         <th></th><th>Type</th><th>Ticker</th><th>Nom</th>
         <th class="num">Quantité</th><th class="num">PRU</th><th>Devise</th><th>Compte</th><th>Lecture</th>
       </tr></thead><tbody>${pending.map(rowHTML).join('')}</tbody></table></div>
+      ${res.target ? `<label class="v-target">
+        <input type="checkbox" id="vApplyTarget" checked>
+        <span>Régler aussi mon <b>allocation cible</b> :
+        ${G.Store.CLASSES.map(k => `${LBL[k]} ${res.target[k]} %`).join(' · ')}
+        <span class="muted sm">— modifiable à tout moment dans Réglages</span></span>
+      </label>` : ''}
       <p class="note" style="margin-top:12px">Les cases vides n'ont pas pu être lues — remplis-les
       toi-même plutôt que de laisser l'application deviner. Sans prix de revient, la position sera
       créée mais sa plus-value restera à zéro tant que tu ne l'auras pas saisi.</p>
@@ -2656,18 +3077,26 @@ svg{display:block;overflow:visible}
         avgPrice: Number(p.avgPrice) || 0,
         currency: p.currency || 'EUR',
         account: p.account || 'Autre',
+        stakingPct: p.stakingPct,
+        stakingUntil: p.stakingUntil,
         importedFrom: 'photo',
         importedAt: G.Store.todayISO()
       });
       n++;
     });
+    const box = document.querySelector('#vApplyTarget');
+    let cible = '';
+    if (proposedTarget && box && box.checked) {
+      G.Store.state.profile.target = Object.assign({}, proposedTarget);
+      cible = ' Allocation cible réglée.';
+    }
     G.Store.save(true);
     G.UI.closeModal();
-    G.UI.toast(`${n} position(s) créée(s). Vérifie les prix de revient, puis lance « Actualiser ».`, 'ok');
-    G.UI.renderPortfolio(); G.UI.renderDashboard();
+    G.UI.toast(`${n} position(s) créée(s).${cible} Vérifie les prix de revient, puis lance « Actualiser ».`, 'ok');
+    G.UI.renderPortfolio(); G.UI.renderDashboard(); G.UI.renderSettings();
   }
 
-  G.Vision = { openImport, enabled, parse, clean, extract, readPasted };
+  G.Vision = { openImport, enabled, parse, clean, cleanTarget, extract, readPasted };
 })(window);
 
 
@@ -2928,6 +3357,17 @@ svg{display:block;overflow:visible}
     if (snap.alloc.crypto > maxCrypto) push(2, 'Poche crypto au-dessus de ta tolérance',
       `${snap.alloc.crypto.toFixed(1)} % du patrimoine est en cryptoactifs, pour un maximum de ${maxCrypto} % sur un profil ${snap.profile.label.toLowerCase()}.`,
       'La crypto ne verse aucun revenu et sa volatilité dépasse largement celle des actions. Réorienter les prochains versements suffit à faire redescendre le poids sans vendre.');
+    // on part du snapshot : ses lignes portent déjà la valeur calculée
+    const aujourdhui = G.Store.todayISO();
+    const bloquees = snap.holdings.filter(h => h.stakingUntil && h.stakingUntil > aujourdhui);
+    if (bloquees.length) {
+      const val = bloquees.reduce((a, h) => a + h._value, 0);
+      const fin = bloquees.map(h => h.stakingUntil).sort().pop();
+      const part = snap.total > 0 ? val / snap.total * 100 : 0;
+      push(part > 25 ? 2 : 1, 'Positions immobilisées',
+        `${bloquees.map(h => h.ticker).join(', ')} — ${fmtE(val)} (${part.toFixed(1)} % du patrimoine) bloqués jusqu'au ${fin}.`,
+        'Un rendement de staking rémunère d\'abord cette immobilisation : tu ne peux ni vendre ni arbitrer d\'ici là, quoi que fasse le cours. Le rendement est par ailleurs versé dans le jeton lui-même, dont la valeur varie.');
+    }
     const stables = snap.holdings.filter(h => h.type === 'crypto' && (G.Store.cryptoMeta(h.ticker) || {}).cap === 'stable');
     const stablesVal = stables.reduce((a, h) => a + h._value, 0);
     if (snap.cryptoValue > 0 && stablesVal / snap.cryptoValue > 0.5) push(1, 'Poche crypto surtout en stablecoins',
@@ -5060,12 +5500,19 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
     const perf = $('#heroPerf');
     perf.textContent = pctS(s.plPct, 1);
     perf.className = 'pill' + (s.plPct < 0 ? ' neg' : '');
-    $('#heroPl').textContent = `${s.pl >= 0 ? '+' : ''}${eur(s.pl)} de plus-value latente`;
+    // on ne laisse jamais croire que la plus-value couvre tout le portefeuille
+    $('#heroPl').textContent = s.unpriced.length
+      ? `${s.pl >= 0 ? '+' : ''}${eur(s.pl)} sur ${pctA(s.plCoverage)} du portefeuille — ` +
+        `${s.unpriced.length} ligne(s) sans prix de revient`
+      : `${s.pl >= 0 ? '+' : ''}${eur(s.pl)} de plus-value latente`;
     $('#statMonth').textContent = eur(G.Store.investedInMonth());
     $('#statCrypto').textContent = eur(s.cryptoValue);
     const y = G.Store.currentYield(s);
     $('#statIncome').textContent = eur(y.realised);
     $('#statYield').textContent = pctA(y.pct);
+    const st2 = $('#statYield').parentElement.querySelector('span');
+    if (st2) st2.textContent = y.expectedStaking > 0
+      ? 'Rendement courant (dont staking)' : 'Rendement courant';
 
     // allocation
     const A = G.DATA.ASSET_COLORS;
@@ -5132,13 +5579,20 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
       return `<tr data-hid="${h.id}">
         <td><span class="tag ${TYPE_CLS[h.type] || 'action'}">${TYPE_LBL[h.type] || 'Action'}</span></td>
         <td><span class="tick">${esc(h.ticker || '—')}</span><span class="sub">${esc(h.name || (cat ? cat.name : ''))}</span></td>
-        <td>${esc(h.account)}${cat && cat.pea ? ' <span class="tag pea">PEA</span>' : ''}</td>
+        <td>${esc(h.account)}${cat && cat.pea ? ' <span class="tag pea">PEA</span>' : ''}${
+          Number(h.stakingPct) > 0 ? (h.stakingUntil
+            // le cadenas ne doit désigner qu'une vraie immobilisation : une
+            // épargne « flexible » se retire à tout moment.
+            ? ` <span class="tag stake" title="Immobilisé jusqu'au ${esc(h.stakingUntil)}">🔒 ${h.stakingPct} %</span>`
+            : ` <span class="tag yield" title="Rendement annoncé, retrait possible à tout moment">↑ ${h.stakingPct} %</span>`) : ''}</td>
         <td class="num">${has(h.quantity) ? h.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 4 }) : '—'}</td>
         <td class="num">${eur2(h.avgPrice)}</td>
         <td class="num">${h._live ? eur2(h._price) : `<span class="muted">${eur2(h._price)}</span>`}
           <span class="sub">${h._live ? esc(h._priceSource) + ' · ' + esc(h._priceDate || '') : 'prix de revient'}</span></td>
         <td class="num"><b>${eur(h._value)}</b><span class="sub">${pctA(s.total ? h._value / s.total * 100 : 0)} du total</span></td>
-        <td class="num ${h._pl >= 0 ? 'pos' : 'neg'}">${eur(h._pl)}<span class="sub ${h._pl >= 0 ? 'pos' : 'neg'}">${pctS(h._plPct, 1)}</span></td>
+        ${h._pl === null
+          ? `<td class="num muted">—<span class="sub">prix de revient à saisir</span></td>`
+          : `<td class="num ${h._pl >= 0 ? 'pos' : 'neg'}">${eur(h._pl)}<span class="sub ${h._pl >= 0 ? 'pos' : 'neg'}">${pctS(h._plPct, 1)}</span></td>`}
         <td class="num"><button class="icon-btn" data-act="edit-h" data-id="${h.id}">✎</button>
           <button class="icon-btn" data-act="del-h" data-id="${h.id}">✕</button></td>
       </tr>`;
@@ -5193,6 +5647,8 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
       ${field('region', 'Région (actions)', { type:'select', value: h ? h.region : '',
         options: [{v:'',l:'—'}].concat(['États-Unis','France','Europe hors RU','Royaume-Uni','Japon','Asie-Pacifique','Émergents','Chine'].map(x => ({v:x,l:x}))) })}
       ${field('currency', 'Devise', { type:'select', value: h ? h.currency : 'EUR', options:[{v:'EUR',l:'EUR'},{v:'USD',l:'USD'},{v:'GBP',l:'GBP'},{v:'CHF',l:'CHF'}] })}
+      ${field('stakingPct', 'Staking — rendement annoncé (%/an)', { type:'number', value: h ? h.stakingPct : '', ph:'ex. 4.5' })}
+      ${field('stakingUntil', 'Staking — immobilisé jusqu\'au', { type:'date', value: h ? h.stakingUntil : '' })}
     </div>
     <p class="note" style="margin-top:14px">Le ticker sert à récupérer le cours réel. Si tu rattaches un ETF au catalogue, sa composition (indice, frais, géographie, secteurs) alimente l'analyse de diversification.
     Pour une crypto, saisis simplement son symbole (<code>BTC</code>, <code>ETH</code>, <code>SOL</code>…) : les cours viennent de CoinGecko, sans clé d'API. Les quantités fractionnaires sont acceptées.</p>`;
@@ -5722,6 +6178,7 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
     wireSettings();
     wireChat();
     wireModal();
+    G.Alerts.wire();
     wireServerPanel();
     U().renderSettings();
     U().go('dashboard');
@@ -5795,6 +6252,7 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
         });
         U().toast(`${r.updated}/${r.total} ligne(s) actualisée(s).`, r.updated ? 'ok' : 'err');
         U().renderDashboard(); U().renderPortfolio();
+        G.Alerts.check();          // les nouveaux cours peuvent franchir un seuil
       } catch (e) { U().toast('Échec : ' + e.message, 'err'); }
       btn.textContent = orig; btn.disabled = false;
     });

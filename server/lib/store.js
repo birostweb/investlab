@@ -18,6 +18,21 @@ class Store {
     this._pending = null;
     fs.mkdirSync(this.dir, { recursive: true });
     fs.mkdirSync(this.backupDir, { recursive: true });
+    this._cleanTemp();
+  }
+
+  /** Un processus tué en pleine écriture atomique laisse un « .tmp-<pid> ».
+   *  Inoffensif, mais cela s'accumule à chaque redéploiement : on balaie
+   *  au démarrage. Le fichier définitif, lui, n'est jamais touché. */
+  _cleanTemp() {
+    try {
+      let n = 0;
+      for (const f of fs.readdirSync(this.dir)) {
+        if (!/\.tmp-\d+$/.test(f)) continue;
+        try { fs.unlinkSync(path.join(this.dir, f)); n++; } catch (e) { /* rien */ }
+      }
+      if (n) this.log(n + ' fichier(s) temporaire(s) d\'une écriture interrompue supprimé(s)');
+    } catch (e) { /* rien */ }
   }
 
   readState() {

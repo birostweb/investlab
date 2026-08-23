@@ -69,6 +69,7 @@
     wireSettings();
     wireChat();
     wireModal();
+    G.Alerts.wire();
     wireServerPanel();
     U().renderSettings();
     U().go('dashboard');
@@ -142,6 +143,7 @@
         });
         U().toast(`${r.updated}/${r.total} ligne(s) actualisée(s).`, r.updated ? 'ok' : 'err');
         U().renderDashboard(); U().renderPortfolio();
+        G.Alerts.check();          // les nouveaux cours peuvent franchir un seuil
       } catch (e) { U().toast('Échec : ' + e.message, 'err'); }
       btn.textContent = orig; btn.disabled = false;
     });

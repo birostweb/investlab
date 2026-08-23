@@ -64,7 +64,7 @@ Dans le conteneur, `DATA_DIR` vaut `/data` (fixé par le `Dockerfile`) et doit
 |---|---|
 | `npm start` | démarre le serveur |
 | `npm run dev` | idem, en chargeant `.env` |
-| `npm test` | lance les 116 tests (aucune dépendance, aucun réseau) |
+| `npm test` | lance les 135 tests (aucune dépendance, aucun réseau) |
 | `npm run build:offline` | génère `MonInvestisseurIA.html` |
 
 ---
@@ -75,9 +75,9 @@ Dans le conteneur, `DATA_DIR` vaut `/data` (fixé par le `Dockerfile`) et doit
 npm test
 ```
 
-116 tests couvrent la logique pure — sécurité des chemins et des jetons,
+135 tests couvrent la logique pure — sécurité des chemins et des jetons,
 persistance atomique, calculs de portefeuille, dates, moteurs de scoring,
-simulateur et lecture des captures d'écran. Ils s'exécutent avec le lanceur intégré de Node (`node:test`) :
+simulateur, alertes de prix et lecture des captures d'écran. Ils s'exécutent avec le lanceur intégré de Node (`node:test`) :
 ni framework, ni réseau, ni serveur à démarrer.
 
 Au **démarrage**, le serveur lance en plus un autotest et l'écrit dans les
@@ -302,7 +302,28 @@ rééquilibrer par les apports coûte moins cher en frais et en impôt.
 
 ---
 
-## 9. Les règles codées dans le moteur
+## 9. Alertes de prix
+
+**Portefeuille → + Alerte.** Choisis un actif, un sens (« atteint » ou
+« descend sous »), un seuil, et une note pour te rappeler ce que tu comptes
+faire à ce niveau.
+
+| | |
+|---|---|
+| Quand sont-elles vérifiées ? | à chaque rafraîchissement des cours |
+| Navigateur fermé ? | **oui en mode serveur** : le rafraîchissement automatique les évalue, tu les découvres à ta prochaine visite |
+| Notification système | seulement si l'onglet est ouvert et la permission accordée |
+| Notification sur téléphone, app fermée | **non** — cela demanderait un service de push, absent de ce projet auto-hébergé |
+| Se redéclenche-t-elle ? | non : une fois déclenchée, elle reste à réarmer (↻). Un cours qui oscille autour du seuil n'alerte donc qu'une fois |
+| Passe-t-elle des ordres ? | **jamais.** Une alerte prévient, elle ne décide pas |
+
+La règle de déclenchement vit dans `public/js/alerts-rules.js` — **un seul
+fichier**, chargé par le navigateur et par le serveur (`require`). Deux
+évaluations divergentes seraient pires que pas d'alerte du tout.
+
+---
+
+## 10. Les règles codées dans le moteur
 
 1. **Jamais de donnée inventée.** Chaque chiffre porte sa source et sa date.
 2. **Jamais de score partiel déguisé en score.** En dessous de 4 dimensions
@@ -317,7 +338,7 @@ rééquilibrer par les apports coûte moins cher en frais et en impôt.
 
 ---
 
-## 10. Limites, dites franchement
+## 11. Limites, dites franchement
 
 - **Bricks n'a pas d'API publique ouverte.** Les projets se saisissent à la
   main : aucune récupération non autorisée n'est faite.
@@ -350,7 +371,7 @@ rééquilibrer par les apports coûte moins cher en frais et en impôt.
 
 ---
 
-## 11. Sécurité
+## 12. Sécurité
 
 - Accès protégé par mot de passe, session signée en HMAC-SHA256, cookie
   `HttpOnly` + `SameSite=Lax` + `Secure` derrière HTTPS.
@@ -373,7 +394,7 @@ rééquilibrer par les apports coûte moins cher en frais et en impôt.
 
 ---
 
-## 12. En cas de problème
+## 13. En cas de problème
 
 | Symptôme | Cause probable | Solution |
 |---|---|---|
@@ -394,7 +415,7 @@ fournisseur et chaque rafraîchissement y sont tracés avec leur durée.
 
 ---
 
-## 13. Structure
+## 14. Structure
 
 ```
 investlab/
@@ -418,6 +439,8 @@ investlab/
 │     ├─ store.js          état et calculs de portefeuille
 │     ├─ market.js         accès aux données (serveur ou direct)
 │     ├─ vision.js         import de positions depuis des captures d'écran
+│     ├─ alerts-rules.js   règle de déclenchement (partagée avec le serveur)
+│     ├─ alerts.js         alertes : interface, notifications
 │     ├─ engine.js         moteurs d'analyse et de scoring
 │     ├─ agent.js          InvestAI : compréhension et réponses
 │     ├─ charts.js         graphiques SVG
@@ -433,5 +456,6 @@ investlab/
    ├─ portfolio.test.js    dates, valorisation, import/export
    ├─ engine.test.js       confiance, scoring, plan, simulateur
    ├─ vision.test.js       lecture des captures, normalisation, garde-fous
+   ├─ alerts.test.js       seuils, non-redéclenchement, réarmement
    └─ market-stats.test.js volatilité, drawdown, CAGR, échantillonnage
 ```

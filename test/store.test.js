@@ -109,3 +109,14 @@ test('stats reflète la taille et le nombre de sauvegardes', async () => {
   assert.ok(st.mtime);
   assert.strictEqual(st.backups, 1);
 });
+
+test('les temporaires d\'une écriture interrompue sont balayés au démarrage', () => {
+  const dir = tmp();
+  fs.writeFileSync(path.join(dir, 'state.json.tmp-12345'), 'moitié écrit');
+  fs.writeFileSync(path.join(dir, 'market-cache.json.tmp-999'), '{');
+  fs.writeFileSync(path.join(dir, 'state.json'), '{"holdings":[]}');
+  new Store(dir, () => {});
+  const restants = fs.readdirSync(dir);
+  assert.strictEqual(restants.filter(f => f.includes('.tmp-')).length, 0, 'temporaires supprimés');
+  assert.ok(restants.includes('state.json'), 'le fichier définitif est intact');
+});

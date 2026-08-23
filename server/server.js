@@ -19,6 +19,7 @@ const zlib = require('zlib');
 const U = require('./lib/util');
 const { Providers } = require('./lib/providers');
 const { Store } = require('./lib/store');
+const Alerts = require('../public/js/alerts-rules');   // source unique, partagée avec le navigateur
 
 /* ------------------------------------------------------------ configuration */
 const ENV = process.env;
@@ -484,7 +485,18 @@ async function refreshAll(manual) {
       if (h.lastPrice !== price) changed = true;
       h.lastPrice = price; h.lastPriceDate = q.asOf; h.lastPriceSource = src + (q.stale ? ' (cache)' : '');
     }
-    if (changed || manual) {
+    /* Alertes de prix : évaluées ICI, sur le rafraîchissement automatique.
+       C'est ce qui permet à une alerte de se déclencher même quand aucun
+       navigateur n'est ouvert — l'utilisateur la découvre à sa prochaine
+       visite. La même règle (lib/alerts.js) tourne côté navigateur. */
+    const prices = {};
+    for (const h of (state.holdings || [])) {
+      if (h.ticker && h.lastPrice) prices[String(h.ticker).toUpperCase()] = h.lastPrice;
+    }
+    const fired = Alerts.evaluate(state.alerts, prices, new Date().toISOString());
+    fired.forEach(a => log('ALERTE · ' + Alerts.describe(a)));
+
+    if (changed || manual || fired.length) {
       state.settings = state.settings || {};
       state.settings.lastRefresh = new Date().toISOString();
       await store.writeState(state);
@@ -492,7 +504,7 @@ async function refreshAll(manual) {
     lastRefresh = new Date().toISOString();
     store.writeCache(marketCache.dump());
     log(`rafraîchissement : ${updated}/${total} cours (${failed} échecs) en ${Date.now() - t0}ms`);
-    return { ok: true, total, updated, failed, at: lastRefresh, ms: Date.now() - t0 };
+    return { ok: true, total, updated, failed, alerts: fired.length, at: lastRefresh, ms: Date.now() - t0 };
   } catch (e) {
     warn('rafraîchissement interrompu : ' + e.message);
     return { ok: false, error: e.message };

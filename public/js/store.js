@@ -44,6 +44,7 @@
       transactions: [],  // achats/ventes/dividendes/versements
       journal: [],       // journal des décisions
       watchlist: [],     // tickers suivis
+      alerts: [],        // alertes de prix (voir alerts.js)
       etfExtra: [],      // ETF ajoutés à la main au catalogue
       settings: {
         keys: { twelvedata: '', finnhub: '', alphavantage: '', anthropic: '' },
@@ -214,6 +215,39 @@
   function updateJournal(id, patch) { const j = state.journal.find(x => x.id === id); if (j) { Object.assign(j, patch); save(); } return j; }
   function removeJournal(id) { state.journal = state.journal.filter(x => x.id !== id); save(); }
 
+  /* ------------------------------------------------------------- alertes */
+  /** Une alerte se déclenche quand le cours FRANCHIT le seuil dans le sens
+   *  choisi. Elle ne se redéclenche pas tant qu'elle n'est pas réarmée :
+   *  sinon un cours qui oscille autour du seuil alerterait sans fin. */
+  function addAlert(a) {
+    const rec = Object.assign({
+      id: uid(), ticker: '', kind: 'above', price: 0, note: '',
+      active: true, createdAt: todayISO(),
+      triggeredAt: null, triggeredPrice: null, seen: false
+    }, a);
+    rec.ticker = String(rec.ticker || '').toUpperCase();
+    rec.price = Number(rec.price) || 0;
+    if (!rec.ticker || rec.price <= 0) return null;
+    state.alerts.push(rec); save(); return rec;
+  }
+  function updateAlert(id, patch) {
+    const a = state.alerts.find(x => x.id === id);
+    if (a) { Object.assign(a, patch); save(); }
+    return a;
+  }
+  function removeAlert(id) { state.alerts = state.alerts.filter(x => x.id !== id); save(); }
+  /** Réarme une alerte déclenchée : elle repart en surveillance. */
+  function rearmAlert(id) {
+    return updateAlert(id, { triggeredAt: null, triggeredPrice: null, seen: false, active: true });
+  }
+  const pendingAlerts = () => state.alerts.filter(a => a.triggeredAt && !a.seen);
+  function markAlertsSeen() {
+    let n = 0;
+    state.alerts.forEach(a => { if (a.triggeredAt && !a.seen) { a.seen = true; n++; } });
+    if (n) save();
+    return n;
+  }
+
   function addWatch(w) {
     if (state.watchlist.some(x => x.ticker.toUpperCase() === String(w.ticker).toUpperCase())) return null;
     const rec = Object.assign({ id: uid(), ticker: '', name: '', kind: 'action' }, w);
@@ -252,10 +286,13 @@
       const p = priceOf(h);
       const value = (Number(h.quantity) || 0) * p.price;
       const cost = costOf(h);
-      const pl = value - cost;
+      /* Sans prix de revient, il n'y a PAS de plus-value : la renvoyer à
+         `value - 0` afficherait la valeur entière comme un gain. On renvoie
+         null, et l'interface montre « — » plutôt qu'un chiffre faux. */
+      const pl = cost > 0 ? value - cost : null;
       return Object.assign({}, h, {
         _price: p.price, _live: p.live, _priceDate: p.date, _priceSource: p.source,
-        _value: value, _cost: cost, _pl: pl, _plPct: cost > 0 ? (pl / cost) * 100 : 0
+        _value: value, _cost: cost, _pl: pl, _plPct: cost > 0 ? (pl / cost) * 100 : null
       });
     });
 
@@ -276,7 +313,7 @@
        Une position importée depuis une capture d'écran n'en a souvent aucun :
        la compter à coût nul afficherait la totalité de sa valeur comme un gain.
        `plCoverage` dit quelle part du portefeuille la plus-value couvre. */
-    const priced = holdings.filter(h => h._cost > 0);
+    const priced = holdings.filter(h => h._cost > 0 && h._pl !== null);
     const costKnown = priced.reduce((s, h) => s + h._cost, 0);
     const valueKnown = priced.reduce((s, h) => s + h._value, 0);
     const marketValue = etfValue + stockValue + cryptoValue;
@@ -380,6 +417,7 @@
     addTransaction, removeTransaction,
     addJournal, updateJournal, removeJournal,
     addWatch, removeWatch,
+    addAlert, updateAlert, removeAlert, rearmAlert, pendingAlerts, markAlertsSeen,
     etfCatalog, findCatalog, cryptoMeta, normaliseTarget, CLASSES,
     priceOf, valueOf, costOf, snapshot,
     investedInMonth, monthlySeries, incomeLast12m, currentYield, lockedHoldings,

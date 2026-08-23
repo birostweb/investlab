@@ -74,6 +74,7 @@
       </div>
       <div class="topbar-right">
         <span class="muted sm" id="saveState"></span>
+        <button class="btn ghost sm" id="btnAlerts" title="Mes alertes de prix">⏰ Alertes</button>
         <button class="btn ghost sm" id="btnRefresh" title="Rafraîchir les prix depuis les fournisseurs de données">↻ Actualiser</button>
         <button class="btn ghost sm" id="btnExport" title="Exporter toutes mes données">⤓ Export</button>
         <label class="btn ghost sm" title="Importer une sauvegarde">⤒ Import<input type="file" id="fileImport" accept="application/json" hidden></label>
@@ -173,6 +174,21 @@
             </div>
           </div>
           <div id="holdingsTable" class="table-wrap"></div>
+        </div>
+
+        <div class="card" id="alertsCard">
+          <div class="card-head">
+            <h3>Alertes de prix</h3>
+            <div class="row-actions">
+              <span class="muted sm" id="alertsNotifState"></span>
+              <button class="btn sm" id="btnAddAlert">+ Alerte</button>
+            </div>
+          </div>
+          <div id="alertsList" class="table-wrap"></div>
+          <p class="note">Les alertes sont vérifiées à chaque rafraîchissement des cours —
+          en mode serveur, y compris quand aucun navigateur n'est ouvert. Une notification
+          système n'apparaît que si cet onglet est ouvert et que tu as accordé la permission.
+          <b>Aucun ordre n'est jamais passé automatiquement.</b></p>
         </div>
 
         <div class="grid two">
@@ -455,6 +471,8 @@
 <script src="js/data.js"></script>
 <script src="js/store.js"></script>
 <script src="js/market.js"></script>
+<script src="js/alerts-rules.js"></script>
+<script src="js/alerts.js"></script>
 <script src="js/vision.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/agent.js"></script>

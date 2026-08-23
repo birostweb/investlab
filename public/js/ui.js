@@ -235,13 +235,19 @@
         <td><span class="tag ${TYPE_CLS[h.type] || 'action'}">${TYPE_LBL[h.type] || 'Action'}</span></td>
         <td><span class="tick">${esc(h.ticker || '—')}</span><span class="sub">${esc(h.name || (cat ? cat.name : ''))}</span></td>
         <td>${esc(h.account)}${cat && cat.pea ? ' <span class="tag pea">PEA</span>' : ''}${
-          Number(h.stakingPct) > 0 ? ` <span class="tag stake" title="Immobilisé${h.stakingUntil ? " jusqu'au " + esc(h.stakingUntil) : ''}">🔒 ${h.stakingPct} %</span>` : ''}</td>
+          Number(h.stakingPct) > 0 ? (h.stakingUntil
+            // le cadenas ne doit désigner qu'une vraie immobilisation : une
+            // épargne « flexible » se retire à tout moment.
+            ? ` <span class="tag stake" title="Immobilisé jusqu'au ${esc(h.stakingUntil)}">🔒 ${h.stakingPct} %</span>`
+            : ` <span class="tag yield" title="Rendement annoncé, retrait possible à tout moment">↑ ${h.stakingPct} %</span>`) : ''}</td>
         <td class="num">${has(h.quantity) ? h.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 4 }) : '—'}</td>
         <td class="num">${eur2(h.avgPrice)}</td>
         <td class="num">${h._live ? eur2(h._price) : `<span class="muted">${eur2(h._price)}</span>`}
           <span class="sub">${h._live ? esc(h._priceSource) + ' · ' + esc(h._priceDate || '') : 'prix de revient'}</span></td>
         <td class="num"><b>${eur(h._value)}</b><span class="sub">${pctA(s.total ? h._value / s.total * 100 : 0)} du total</span></td>
-        <td class="num ${h._pl >= 0 ? 'pos' : 'neg'}">${eur(h._pl)}<span class="sub ${h._pl >= 0 ? 'pos' : 'neg'}">${pctS(h._plPct, 1)}</span></td>
+        ${h._pl === null
+          ? `<td class="num muted">—<span class="sub">prix de revient à saisir</span></td>`
+          : `<td class="num ${h._pl >= 0 ? 'pos' : 'neg'}">${eur(h._pl)}<span class="sub ${h._pl >= 0 ? 'pos' : 'neg'}">${pctS(h._plPct, 1)}</span></td>`}
         <td class="num"><button class="icon-btn" data-act="edit-h" data-id="${h.id}">✎</button>
           <button class="icon-btn" data-act="del-h" data-id="${h.id}">✕</button></td>
       </tr>`;
@@ -296,7 +302,7 @@
       ${field('region', 'Région (actions)', { type:'select', value: h ? h.region : '',
         options: [{v:'',l:'—'}].concat(['États-Unis','France','Europe hors RU','Royaume-Uni','Japon','Asie-Pacifique','Émergents','Chine'].map(x => ({v:x,l:x}))) })}
       ${field('currency', 'Devise', { type:'select', value: h ? h.currency : 'EUR', options:[{v:'EUR',l:'EUR'},{v:'USD',l:'USD'},{v:'GBP',l:'GBP'},{v:'CHF',l:'CHF'}] })}
-      ${field('stakingPct', 'Staking — rendement annoncé (%/an)', { type:'number', value: h ? h.stakingPct : '', ph:'11.44' })}
+      ${field('stakingPct', 'Staking — rendement annoncé (%/an)', { type:'number', value: h ? h.stakingPct : '', ph:'ex. 4.5' })}
       ${field('stakingUntil', 'Staking — immobilisé jusqu\'au', { type:'date', value: h ? h.stakingUntil : '' })}
     </div>
     <p class="note" style="margin-top:14px">Le ticker sert à récupérer le cours réel. Si tu rattaches un ETF au catalogue, sa composition (indice, frais, géographie, secteurs) alimente l'analyse de diversification.

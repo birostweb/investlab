@@ -262,3 +262,38 @@ test('replaceState survit à des types incompatibles sans lever', () => {
   }
   assert.ok(Number.isFinite(w.Store.snapshot().total));
 });
+
+/* ================================= PLUS-VALUE SANS PRIX DE REVIENT ==========
+   Une position importée depuis une capture d'écran n'a souvent aucun PRU.
+   La compter à coût nul afficherait la totalité de sa valeur comme un gain —
+   c'est-à-dire un chiffre faux, sur l'écran principal.                      */
+test('sans prix de revient, la plus-value d\'une ligne vaut null, pas sa valeur', () => {
+  const w = fresh();
+  w.Store.addHolding({ type: 'crypto', ticker: 'XRP', quantity: 254, avgPrice: 0, lastPrice: 1.3 });
+  const h = w.Store.snapshot().holdings[0];
+  assert.ok(h._value > 300, 'la position est bien valorisée');
+  assert.strictEqual(h._pl, null, 'aucune plus-value affichable');
+  assert.strictEqual(h._plPct, null);
+});
+
+test('les lignes sans PRU sont exclues de la plus-value globale', () => {
+  const w = fresh();
+  w.Store.addHolding({ type: 'crypto', ticker: 'XRP', quantity: 254, avgPrice: 0, lastPrice: 1.3 });
+  w.Store.addHolding({ type: 'crypto', ticker: 'ETH', quantity: 1, avgPrice: 2000, lastPrice: 2100 });
+  const s = w.Store.snapshot();
+  assert.strictEqual(s.pl, 100, 'seule la ligne au PRU connu compte');
+  assert.strictEqual(s.plPct, 5);
+  assert.ok(s.plCoverage < 100, 'la couverture le dit : ' + s.plCoverage);
+  assert.strictEqual(s.unpriced.length, 1);
+});
+
+test('un portefeuille entièrement sans PRU n\'affiche aucun gain', () => {
+  const w = fresh();
+  w.Store.addHolding({ type: 'crypto', ticker: 'XRP', quantity: 254, avgPrice: 0, lastPrice: 1.3 });
+  w.Store.addHolding({ type: 'crypto', ticker: 'BNB', quantity: 0.05, avgPrice: 0, lastPrice: 598 });
+  const s = w.Store.snapshot();
+  assert.strictEqual(s.pl, 0);
+  assert.strictEqual(s.plPct, 0);
+  assert.strictEqual(s.plCoverage, 0, 'la plus-value ne couvre rien du tout');
+  assert.ok(s.total > 300, 'le patrimoine reste correctement valorisé');
+});
