@@ -1,0 +1,17 @@
+{
+  "name": "mon-investisseur-ia",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Suivi et analyse d'investissements, auto-hébergé. Aucune dépendance externe.",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --env-file-if-exists=.env server/server.js",
+    "test": "node --test test/*.test.js",
+    "build:offline": "node scripts/build-offline.mjs",
+    "health": "curl -fsS http://127.0.0.1:${PORT:-3000}/api/health"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

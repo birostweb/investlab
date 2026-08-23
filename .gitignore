@@ -7,6 +7,10 @@
 data/
 *.log
 
+# Réglages d'éditeur (chemins propres à une machine)
+.idea/
+.vscode/
+
 # Fichiers de travail
 _test.html
 node_modules/

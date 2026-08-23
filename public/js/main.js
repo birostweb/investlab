@@ -605,7 +605,7 @@
     const now = new Date();
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 5);
-      const iso = d.toISOString().slice(0, 10);
+      const iso = G.Store.localISO(d);
       const amt = 130 + Math.round(((i * 37) % 60));
       G.Store.addTransaction({ date: iso, kind:'buy', ticker:'IWDA', label:'iShares Core MSCI World',
         quantity: +(amt / 95).toFixed(4), price: 95, amount: amt, fees: 1 });

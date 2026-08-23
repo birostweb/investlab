@@ -1321,8 +1321,21 @@ svg{display:block;overflow:visible}
   const KEY = 'investai.state.v1';
 
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-  const todayISO = () => new Date().toISOString().slice(0, 10);
-  const monthKey = (d) => (d || todayISO()).slice(0, 7);
+
+  /* Dates en heure LOCALE.
+     `toISOString()` bascule en UTC : à Paris (UTC+1/+2), le 1er août à 00 h 00
+     locale devient « 2026-07-31T22:00Z ». Utilisé pour dater un mouvement ou
+     construire une clé de mois, cela décale la date d'un jour en soirée et la
+     clé de mois d'un mois entier. Tout ce qui est daté ici l'est donc en local. */
+  const pad = n => String(n).padStart(2, '0');
+  const localISO = (d) => {
+    d = d || new Date();
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  };
+  const localMonth = (d) => { d = d || new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
+  const todayISO = () => localISO();
+  const monthKey = (d) => (typeof d === 'string' && d) ? d.slice(0, 7)
+    : (d instanceof Date) ? localMonth(d) : localMonth();
 
   function blankState() {
     return {
@@ -1556,14 +1569,14 @@ svg{display:block;overflow:visible}
     const now = new Date();
     for (let i = months - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const mk = d.toISOString().slice(0, 7);
+      const mk = localMonth(d);
       out.push({ month: mk, amount: investedInMonth(mk) });
     }
     return out;
   }
   function incomeLast12m() {
     const cut = new Date(); cut.setFullYear(cut.getFullYear() - 1);
-    const cutISO = cut.toISOString().slice(0, 10);
+    const cutISO = localISO(cut);
     return state.transactions
       .filter(t => (t.kind === 'dividend' || t.kind === 'interest' || t.kind === 'rent') && t.date >= cutISO)
       .reduce((s, t) => s + (Number(t.amount) || 0), 0);
@@ -1603,7 +1616,7 @@ svg{display:block;overflow:visible}
 
   G.Store = {
     get state() { return state; },
-    load, loadRemote, replaceState, save, uid, todayISO, monthKey,
+    load, loadRemote, replaceState, save, uid, todayISO, monthKey, localISO, localMonth,
     addHolding, updateHolding, removeHolding,
     addBrick, updateBrick, removeBrick,
     addCash, updateCash, removeCash,
@@ -1962,25 +1975,42 @@ svg{display:block;overflow:visible}
     let done = 0, ok = 0;
     for (const h of list) {
       const q = await quote(h.ticker, { force: true });
+      let written = false;
       if (q) {
-        let price = q.price;
-        // conversion si la cotation est dans une autre devise que la ligne
-        if (q.currency && h.currency && q.currency.toUpperCase() !== h.currency.toUpperCase()) {
-          const r = await fx(q.currency, h.currency);
-          if (r) price = price * r.rate;
+        const conv = await toHoldingCurrency(q, h);
+        // règle 1 : aucune donnée inventée. Si le change est indisponible, on
+        // garde l'ancien prix plutôt que d'inscrire un montant en devise
+        // étrangère comme s'il était en euros.
+        if (conv) {
+          G.Store.updateHolding(h.id, {
+            lastPrice: conv.price, lastPriceDate: q.asOf, lastPriceSource: conv.source
+          });
+          written = true; ok++;
         }
-        G.Store.updateHolding(h.id, {
-          lastPrice: price, lastPriceDate: q.asOf,
-          lastPriceSource: q.source + (q.currency && h.currency && q.currency !== h.currency ? ' + FX BCE' : '')
-        });
-        ok++;
       }
       done++;
-      if (onProgress) onProgress(done, list.length, h.ticker, !!q);
+      if (onProgress) onProgress(done, list.length, h.ticker, written);
     }
     st.settings.lastRefresh = new Date().toISOString();
     G.Store.save();
     return { total: list.length, updated: ok };
+  }
+
+  /** Ramène une cotation dans la devise de la ligne.
+   *  Renvoie null si la conversion est nécessaire mais impossible : mieux vaut
+   *  ne pas mettre à jour que valoriser un titre dans la mauvaise devise.
+   *  Si le fournisseur ne dit pas dans quelle devise il cote (cas de Finnhub),
+   *  on inscrit le prix mais on le signale, pour que la confiance baisse.   */
+  async function toHoldingCurrency(q, h) {
+    const hc = String(h.currency || 'EUR').toUpperCase();
+    if (!q.currency) {
+      return { price: q.price, source: q.source + ' · devise non confirmée' };
+    }
+    const qc = String(q.currency).toUpperCase();
+    if (qc === hc) return { price: q.price, source: q.source };
+    const r = await fx(qc, hc);
+    if (!r) return null;
+    return { price: q.price * r.rate, source: q.source + ' + change BCE (' + qc + '→' + hc + ')' };
   }
 
   /** Y a-t-il au moins un fournisseur de prix configuré ? */
@@ -5580,7 +5610,7 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
     const now = new Date();
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 5);
-      const iso = d.toISOString().slice(0, 10);
+      const iso = G.Store.localISO(d);
       const amt = 130 + Math.round(((i * 37) % 60));
       G.Store.addTransaction({ date: iso, kind:'buy', ticker:'IWDA', label:'iShares Core MSCI World',
         quantity: +(amt / 95).toFixed(4), price: 95, amount: amt, fees: 1 });

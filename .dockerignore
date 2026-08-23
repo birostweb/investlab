@@ -1,11 +1,16 @@
+# Le conteneur n'a besoin que de server/ et public/.
 .git
 .gitignore
+.idea
 .env
 .env.*
 !.env.example
 node_modules
 *.md
 build.ps1
+scripts/
+test/
+MonInvestisseurIA.html
 _test.html
 data/
 *.log

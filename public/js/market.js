@@ -341,25 +341,42 @@
     let done = 0, ok = 0;
     for (const h of list) {
       const q = await quote(h.ticker, { force: true });
+      let written = false;
       if (q) {
-        let price = q.price;
-        // conversion si la cotation est dans une autre devise que la ligne
-        if (q.currency && h.currency && q.currency.toUpperCase() !== h.currency.toUpperCase()) {
-          const r = await fx(q.currency, h.currency);
-          if (r) price = price * r.rate;
+        const conv = await toHoldingCurrency(q, h);
+        // règle 1 : aucune donnée inventée. Si le change est indisponible, on
+        // garde l'ancien prix plutôt que d'inscrire un montant en devise
+        // étrangère comme s'il était en euros.
+        if (conv) {
+          G.Store.updateHolding(h.id, {
+            lastPrice: conv.price, lastPriceDate: q.asOf, lastPriceSource: conv.source
+          });
+          written = true; ok++;
         }
-        G.Store.updateHolding(h.id, {
-          lastPrice: price, lastPriceDate: q.asOf,
-          lastPriceSource: q.source + (q.currency && h.currency && q.currency !== h.currency ? ' + FX BCE' : '')
-        });
-        ok++;
       }
       done++;
-      if (onProgress) onProgress(done, list.length, h.ticker, !!q);
+      if (onProgress) onProgress(done, list.length, h.ticker, written);
     }
     st.settings.lastRefresh = new Date().toISOString();
     G.Store.save();
     return { total: list.length, updated: ok };
+  }
+
+  /** Ramène une cotation dans la devise de la ligne.
+   *  Renvoie null si la conversion est nécessaire mais impossible : mieux vaut
+   *  ne pas mettre à jour que valoriser un titre dans la mauvaise devise.
+   *  Si le fournisseur ne dit pas dans quelle devise il cote (cas de Finnhub),
+   *  on inscrit le prix mais on le signale, pour que la confiance baisse.   */
+  async function toHoldingCurrency(q, h) {
+    const hc = String(h.currency || 'EUR').toUpperCase();
+    if (!q.currency) {
+      return { price: q.price, source: q.source + ' · devise non confirmée' };
+    }
+    const qc = String(q.currency).toUpperCase();
+    if (qc === hc) return { price: q.price, source: q.source };
+    const r = await fx(qc, hc);
+    if (!r) return null;
+    return { price: q.price * r.rate, source: q.source + ' + change BCE (' + qc + '→' + hc + ')' };
   }
 
   /** Y a-t-il au moins un fournisseur de prix configuré ? */

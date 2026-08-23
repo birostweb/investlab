@@ -7,8 +7,21 @@
   const KEY = 'investai.state.v1';
 
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-  const todayISO = () => new Date().toISOString().slice(0, 10);
-  const monthKey = (d) => (d || todayISO()).slice(0, 7);
+
+  /* Dates en heure LOCALE.
+     `toISOString()` bascule en UTC : à Paris (UTC+1/+2), le 1er août à 00 h 00
+     locale devient « 2026-07-31T22:00Z ». Utilisé pour dater un mouvement ou
+     construire une clé de mois, cela décale la date d'un jour en soirée et la
+     clé de mois d'un mois entier. Tout ce qui est daté ici l'est donc en local. */
+  const pad = n => String(n).padStart(2, '0');
+  const localISO = (d) => {
+    d = d || new Date();
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  };
+  const localMonth = (d) => { d = d || new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1); };
+  const todayISO = () => localISO();
+  const monthKey = (d) => (typeof d === 'string' && d) ? d.slice(0, 7)
+    : (d instanceof Date) ? localMonth(d) : localMonth();
 
   function blankState() {
     return {
@@ -242,14 +255,14 @@
     const now = new Date();
     for (let i = months - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const mk = d.toISOString().slice(0, 7);
+      const mk = localMonth(d);
       out.push({ month: mk, amount: investedInMonth(mk) });
     }
     return out;
   }
   function incomeLast12m() {
     const cut = new Date(); cut.setFullYear(cut.getFullYear() - 1);
-    const cutISO = cut.toISOString().slice(0, 10);
+    const cutISO = localISO(cut);
     return state.transactions
       .filter(t => (t.kind === 'dividend' || t.kind === 'interest' || t.kind === 'rent') && t.date >= cutISO)
       .reduce((s, t) => s + (Number(t.amount) || 0), 0);
@@ -289,7 +302,7 @@
 
   G.Store = {
     get state() { return state; },
-    load, loadRemote, replaceState, save, uid, todayISO, monthKey,
+    load, loadRemote, replaceState, save, uid, todayISO, monthKey, localISO, localMonth,
     addHolding, updateHolding, removeHolding,
     addBrick, updateBrick, removeBrick,
     addCash, updateCash, removeCash,

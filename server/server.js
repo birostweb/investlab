@@ -25,7 +25,11 @@ const ENV = process.env;
 const PORT = U.clampInt(ENV.PORT, 1, 65535, 3000);
 const HOST = ENV.HOST || '0.0.0.0';
 const PUBLIC_DIR = path.resolve(__dirname, '..', 'public');
-const DATA_DIR = path.resolve(ENV.DATA_DIR || '/data');
+/* Où vivent le portefeuille et les sauvegardes.
+   Le Dockerfile impose DATA_DIR=/data : le conteneur est donc toujours explicite.
+   Hors conteneur, `/data` n'existe pas et n'est pas créable sans les droits root
+   — on retombe sur ./data pour qu'un simple `npm start` fonctionne. */
+const DATA_DIR = path.resolve(ENV.DATA_DIR || path.join(process.cwd(), 'data'));
 const PASSWORD = (ENV.APP_PASSWORD || '').trim();
 const SESSION_DAYS = U.clampInt(ENV.SESSION_DAYS, 1, 365, 30);
 const REFRESH_MINUTES = U.clampInt(ENV.REFRESH_MINUTES, 0, 10080, 360);
@@ -54,7 +58,15 @@ function sessionSecret(store) {
 }
 
 /* --------------------------------------------------------------- démarrage */
-fs.mkdirSync(DATA_DIR, { recursive: true });
+try {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+} catch (e) {
+  // Message explicite : sans dossier de données, rien ne peut être enregistré.
+  console.error(`\nImpossible de créer le dossier de données « ${DATA_DIR} » : ${e.message}`);
+  console.error('Indique un dossier accessible en écriture, par exemple :');
+  console.error('  DATA_DIR=./data npm start\n');
+  process.exit(1);
+}
 const store = new Store(DATA_DIR, log);
 const SECRET = sessionSecret(store);
 const marketCache = U.makeCache();
@@ -359,10 +371,16 @@ async function refreshAll(manual) {
       const q = await providers.quote(String(h.ticker).toUpperCase());
       if (!q) continue;
       let price = q.price, src = q.source;
-      if (q.currency && h.currency && q.currency.toUpperCase() !== String(h.currency).toUpperCase()) {
-        const fx = await providers.fx(q.currency, h.currency);
-        if (fx) { price = price * fx.rate; src += ' + change BCE'; }
-        else continue;                       // pas de conversion douteuse
+      const hc = String(h.currency || 'EUR').toUpperCase();
+      if (!q.currency) {
+        // le fournisseur ne dit pas dans quelle devise il cote (cas de Finnhub) :
+        // on inscrit le prix mais on le signale, pour ne rien affirmer à tort.
+        src += ' · devise non confirmée';
+      } else if (q.currency.toUpperCase() !== hc) {
+        const fx = await providers.fx(q.currency, hc);
+        if (!fx) continue;                   // pas de conversion douteuse
+        price = price * fx.rate;
+        src += ' + change BCE (' + q.currency.toUpperCase() + '\u2192' + hc + ')';
       }
       if (h.lastPrice !== price) changed = true;
       h.lastPrice = price; h.lastPriceDate = q.asOf; h.lastPriceSource = src + (q.stale ? ' (cache)' : '');
