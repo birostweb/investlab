@@ -28,7 +28,7 @@ if (Test-Path $fontDir) {
 }
 
 # Ordre de chargement identique à celui déclaré dans index.html
-$order = @('api.js','data.js','store.js','market.js','engine.js','agent.js','charts.js','ui.js','main.js')
+$order = @('api.js','data.js','store.js','market.js','vision.js','engine.js','agent.js','charts.js','ui.js','main.js')
 
 $js = ''
 foreach ($f in $order) {

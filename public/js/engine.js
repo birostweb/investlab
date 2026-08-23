@@ -94,8 +94,7 @@
       add(assetClass, 'Immobilier participatif', v);
       covered += v;
     });
-    // liquidités
-    if (snap.cashValue > 0) { add(assetClass, 'Liquidités', snap.cashValue); }
+    // les liquidités ne font pas partie du patrimoine suivi (autre compte)
 
     const pct = bag => {
       const tot = Object.values(bag).reduce((s, x) => s + x, 0);
@@ -185,14 +184,20 @@
       if (s && s.v && has(s.v.volAnn)) { volSum += s.v.volAnn * h._value; volW += h._value; volKnown += h._value; }
     });
     // hypothèses de repli explicites si l'historique manque
-    const fallbackVol = { etf: 14, actions: 26, immobilier: 8, cash: 0 };
+    /* Hypothèses de repli, affichées comme telles. La crypto est de très loin
+       la classe la plus volatile : la traiter comme une action sous-estimerait
+       gravement le risque du portefeuille. */
+    const fallbackVol = { etf: 14, actions: 26, crypto: 70, immobilier: 8 };
     let assumedVol = 0;
     snap.holdings.forEach(h => {
       const s = st.cache.series[(h.ticker || '').toUpperCase()];
-      if (!(s && s.v && has(s.v.volAnn))) { assumedVol += fallbackVol[h.type === 'etf' ? 'etf' : 'actions'] * h._value; volW += h._value; }
+      if (!(s && s.v && has(s.v.volAnn))) {
+        assumedVol += (fallbackVol[h.type] || fallbackVol.actions) * h._value;
+        volW += h._value;
+      }
     });
-    volW += snap.bricksValue + snap.cashValue;
-    assumedVol += fallbackVol.immobilier * snap.bricksValue + fallbackVol.cash * snap.cashValue;
+    volW += snap.bricksValue;
+    assumedVol += fallbackVol.immobilier * snap.bricksValue;
     const portVol = volW ? (volSum + assumedVol) / volW : null;
     const volMeasured = volW ? volKnown / volW * 100 : 0;
 
@@ -206,7 +211,7 @@
       : effectiveLines >= 25 ? 'Faible' : effectiveLines >= 8 ? 'Modérée' : 'Élevée';
 
     // --- écarts à l'allocation cible
-    const drift = ['etf', 'actions', 'immobilier', 'cash'].map(k => ({
+    const drift = ['etf', 'actions', 'crypto', 'immobilier'].map(k => ({
       key: k, actual: snap.alloc[k] || 0, target: snap.target[k] || 0,
       gap: (snap.alloc[k] || 0) - (snap.target[k] || 0)
     }));
@@ -234,7 +239,7 @@
         'Un ETF Europe ou émergents réduirait cette dépendance géographique.');
     }
     drift.forEach(d => {
-      const lbl = { etf: 'ETF', actions: 'Actions', immobilier: 'Immobilier', cash: 'Liquidités' }[d.key];
+      const lbl = { etf: 'ETF', actions: 'Actions', crypto: 'Crypto', immobilier: 'Immobilier' }[d.key];
       if (Math.abs(d.gap) >= 10) push(2, `Écart d'allocation : ${lbl}`,
         `${d.actual.toFixed(1)} % réel contre ${d.target} % visé (écart de ${d.gap > 0 ? '+' : ''}${d.gap.toFixed(1)} points).`,
         d.gap > 0 ? `Redirige tes prochains versements hors ${lbl.toLowerCase()}.` : `Concentre tes prochains versements sur ${lbl.toLowerCase()}.`);
@@ -245,9 +250,15 @@
     if (effectiveLines < 12 && riskyTotal > 0) push(2, 'Trop peu d\'expositions effectives',
       `Une fois les ETF décomposés, le portefeuille se comporte comme s'il ne contenait que ${effectiveLines.toFixed(0)} exposition(s) équivalente(s).`,
       'Un ETF monde large apporte immédiatement plusieurs dizaines d\'expositions effectives.');
-    if (snap.alloc.cash > 35) push(2, 'Liquidités importantes',
-      `${snap.alloc.cash.toFixed(1)} % du patrimoine dort en liquidités.`,
-      'Sur un horizon de ' + st.profile.horizonYears + ' ans, un déploiement progressif et régulier limite le risque de mal choisir son moment.');
+    const maxCrypto = snap.profile.maxCryptoSleeve || 15;
+    if (snap.alloc.crypto > maxCrypto) push(2, 'Poche crypto au-dessus de ta tolérance',
+      `${snap.alloc.crypto.toFixed(1)} % du patrimoine est en cryptoactifs, pour un maximum de ${maxCrypto} % sur un profil ${snap.profile.label.toLowerCase()}.`,
+      'La crypto ne verse aucun revenu et sa volatilité dépasse largement celle des actions. Réorienter les prochains versements suffit à faire redescendre le poids sans vendre.');
+    const stables = snap.holdings.filter(h => h.type === 'crypto' && (G.Store.cryptoMeta(h.ticker) || {}).cap === 'stable');
+    const stablesVal = stables.reduce((a, h) => a + h._value, 0);
+    if (snap.cryptoValue > 0 && stablesVal / snap.cryptoValue > 0.5) push(1, 'Poche crypto surtout en stablecoins',
+      `${(stablesVal / snap.cryptoValue * 100).toFixed(0)} % de ta poche crypto est en stablecoins.`,
+      'Un stablecoin ne progresse pas : c\'est de la trésorerie exposée au risque de l\'émetteur et de la plateforme, pas un investissement.');
     if (exp.coverage < 70 && riskyTotal > 0) push(1, 'Données de composition incomplètes',
       `Seulement ${exp.coverage.toFixed(0)} % du portefeuille a une composition connue.`,
       'Renseigne le secteur/la région de tes actions et rattache tes ETF au catalogue pour fiabiliser l\'analyse.');
@@ -688,11 +699,11 @@
     const snap = G.Store.snapshot();
     const st = G.Store.state;
     const monthly = Number(st.profile.monthlyBudget) || 0;
-    const rows = ['etf', 'actions', 'immobilier', 'cash'].map(k => {
+    const rows = ['etf', 'actions', 'crypto', 'immobilier'].map(k => {
       const actual = snap.alloc[k] || 0, target = snap.target[k] || 0;
       const gap = actual - target;
       const euroGap = snap.total * (gap / 100);
-      return { key: k, label: { etf:'ETF', actions:'Actions', immobilier:'Immobilier', cash:'Liquidités' }[k],
+      return { key: k, label: { etf:'ETF', actions:'Actions', crypto:'Crypto', immobilier:'Immobilier' }[k],
                actual, target, gap, euroGap };
     });
     const maxGap = Math.max(...rows.map(r => Math.abs(r.gap)));
@@ -712,7 +723,7 @@
     if (totalDeficit > 0) {
       deficits.forEach(r => weights[r.key] = Math.abs(r.euroGap) / totalDeficit);
     } else {
-      rows.filter(r => r.key !== 'cash').forEach(r => weights[r.key] = (snap.target[r.key] || 0) / 100);
+      rows.forEach(r => weights[r.key] = (snap.target[r.key] || 0) / 100);
       const s = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
       Object.keys(weights).forEach(k => weights[k] /= s);
     }
@@ -722,7 +733,7 @@
       .sort((a, b) => b.amount - a.amount);
 
     // vente seulement si dépassement vraiment marqué
-    const sellCandidates = rows.filter(r => r.gap > 15 && r.key !== 'cash')
+    const sellCandidates = rows.filter(r => r.gap > 15)
       .map(r => ({ label: r.label, excess: r.euroGap,
         note: `${r.label} dépasse la cible de ${r.gap.toFixed(1)} points (${fmtE(r.euroGap)}). Une vente partielle est envisageable, mais compare d'abord au coût fiscal et aux frais : rediriger les versements est souvent suffisant.` }));
 
@@ -746,10 +757,10 @@
 
     /* Répartition par classe : on vise la cible en tenant compte de l'existant.
        Le déploiement corrige d'abord les poches en déficit.                   */
-    const classes = ['etf', 'actions', 'immobilier'];
+    const classes = ['etf', 'actions', 'crypto', 'immobilier'];
     const deficits = classes.map(k => {
       const targetEuro = (snap.total + capital) * (snap.target[k] || 0) / 100;
-      const currentEuro = { etf: snap.etfValue, actions: snap.stockValue, immobilier: snap.bricksValue }[k];
+      const currentEuro = { etf: snap.etfValue, actions: snap.stockValue, crypto: snap.cryptoValue, immobilier: snap.bricksValue }[k];
       return { key: k, deficit: Math.max(0, targetEuro - currentEuro) };
     });
     const totalDef = deficits.reduce((s, d) => s + d.deficit, 0);
@@ -818,6 +829,27 @@
           lines.push({ amount, label: 'Actions en direct — à sélectionner', kind: 'stock',
             why: 'Montant réservé à la poche actions. Utilise « Meilleures opportunités » pour choisir sur données réelles : je ne propose pas de titre sans avoir analysé ses fondamentaux du moment.' });
         }
+      } else if (classKey === 'crypto') {
+        const sleeve = snap.alloc.crypto || 0;
+        const maxSleeve = prof.maxCryptoSleeve || 15;
+        if (sleeve >= maxSleeve) {
+          lines.push({ amount, label: 'Poche crypto déjà au plafond → reportée sur les ETF', kind: 'note',
+            why: `Ta poche crypto atteint ${sleeve.toFixed(1)} %, au plafond de ${maxSleeve} % de ton profil. Je préfère ne pas l'alimenter.` });
+        } else {
+          // Règle 3 : aucune prédiction, aucun jeton nommé « qui va monter ».
+          const detenus = snap.holdings.filter(h => h.type === 'crypto');
+          const grosses = detenus.filter(h => (G.Store.cryptoMeta(h.ticker) || {}).cap === 'large');
+          lines.push({
+            amount, label: 'Cryptoactifs — à répartir toi-même', kind: 'crypto',
+            why: 'Montant réservé à ta poche crypto. Je ne désigne aucun jeton : ' +
+                 'aucun cryptoactif n\'a de flux financier permettant de le valoriser, ' +
+                 'donc aucun score comparable à celui d\'un ETF ou d\'une action ne serait honnête. ' +
+                 (grosses.length
+                   ? `Tu détiens déjà ${grosses.map(h => h.ticker).join(', ')} : renforcer l'existant évite d'ajouter des lignes que tu ne suivras pas.`
+                   : 'Sur cette poche, les grandes capitalisations sont les seules dont l\'historique de prix est assez long pour mesurer un risque.') +
+                 ' Rappel : volatilité très élevée, aucun revenu, perte totale possible.'
+          });
+        }
       } else if (classKey === 'immobilier') {
         const b = rankBricks().ranked.filter(x => x.brick.status === 'candidat')[0];
         lines.push({
@@ -852,7 +884,7 @@
     const notes = [];
     if (nowC.dropped.length) notes.push(`Les montants inférieurs à ${MIN_ORDER} € ont été regroupés : passer un ordre trop petit fait exploser le poids des frais fixes.`);
     if (capital <= 0 && monthly <= 0) notes.push('Aucun montant saisi : renseigne un capital disponible ou un versement mensuel.');
-    if (snap.alloc.cash > 40) notes.push(`Tu détiens ${snap.alloc.cash.toFixed(0)} % en liquidités. Plutôt que tout déployer d'un coup, un étalement sur 3 à 6 mois réduit le risque de mal choisir son point d'entrée.`);
+    if (capital > 0 && capital > monthly * 6) notes.push(`Tu déploies ${fmtE(capital)} d'un coup. Un étalement sur 3 à 6 mois réduit le risque de mal choisir ton point d'entrée.`);
 
     return { capital, monthly, horizon, prof, thisMonth, recurring, analysis, proj, confidence: conf, notes, snap, bestEtfs };
   }

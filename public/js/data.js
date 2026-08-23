@@ -13,10 +13,11 @@
   const PROFILES = {
     prudent: {
       key: 'prudent', label: 'Prudent',
-      target: { etf: 45, actions: 5, immobilier: 20, cash: 30 },
+      target: { etf: 60, actions: 10, crypto: 5, immobilier: 25 },
       maxSinglePosition: 12,       // % max d'une ligne
       maxSectorExposure: 25,
       maxStockSleeve: 10,          // % max en actions en direct
+      maxCryptoSleeve: 8,          // % max en cryptoactifs
       volTolerance: 10,            // volatilité annualisée tolérée (%)
       maxDrawdownTolerance: 20,
       hypotheses: { pess: 0.5, central: 3.0, opti: 5.0, vol: 7 },
@@ -24,10 +25,11 @@
     },
     equilibre: {
       key: 'equilibre', label: 'Équilibré',
-      target: { etf: 60, actions: 15, immobilier: 20, cash: 5 },
+      target: { etf: 55, actions: 15, crypto: 10, immobilier: 20 },
       maxSinglePosition: 15,
       maxSectorExposure: 35,
       maxStockSleeve: 20,
+      maxCryptoSleeve: 15,
       volTolerance: 15,
       maxDrawdownTolerance: 35,
       hypotheses: { pess: 2.0, central: 5.5, opti: 8.5, vol: 12 },
@@ -35,10 +37,11 @@
     },
     dynamique: {
       key: 'dynamique', label: 'Dynamique',
-      target: { etf: 55, actions: 30, immobilier: 12, cash: 3 },
+      target: { etf: 45, actions: 25, crypto: 20, immobilier: 10 },
       maxSinglePosition: 20,
       maxSectorExposure: 45,
       maxStockSleeve: 35,
+      maxCryptoSleeve: 30,
       volTolerance: 22,
       maxDrawdownTolerance: 50,
       hypotheses: { pess: 1.0, central: 7.0, opti: 11.0, vol: 17 },
@@ -195,11 +198,73 @@
   /* Palette du thème sombre : teintes désaturées mais suffisamment lumineuses
      pour ressortir sur fond noir, et distinctes deux à deux. */
   const ASSET_COLORS = {
-    etf:'#4d8dd6', actions:'#9b86d9', immobilier:'#c9973f', cash:'#4bab9f', obligations:'#4bb87f'
+    etf:'#4d8dd6', actions:'#9b86d9', crypto:'#e0913a', immobilier:'#c9973f', cash:'#4bab9f', obligations:'#4bb87f'
   };
 
   const PALETTE = ['#4d8dd6','#9b86d9','#c9973f','#4bab9f','#4bb87f','#e2635e',
                    '#7ba7cf','#b08a6a','#8f7fc4','#5fc0b3','#d9b96a','#8d97a8'];
 
-  G.DATA = { PROFILES, ETF_CATALOG, STOCK_UNIVERSE, CONCLUSIONS, ASSET_COLORS, PALETTE, REF_DATE };
+  /* ------------------------------------------------------ Cryptoactifs
+     Table de correspondance ticker → identifiant CoinGecko. CoinGecko est
+     gratuit et sans clé : les cours crypto fonctionnent donc sans rien
+     configurer, comme les taux de change de la BCE.
+     `cap` = ordre de grandeur de capitalisation, utilisé seulement pour
+     distinguer les grandes capitalisations des jetons spéculatifs. */
+  const CRYPTO_CATALOG = [
+    { t:'BTC',  id:'bitcoin',      n:'Bitcoin',        cap:'large' },
+    { t:'ETH',  id:'ethereum',     n:'Ethereum',       cap:'large' },
+    { t:'USDT', id:'tether',       n:'Tether',         cap:'stable' },
+    { t:'USDC', id:'usd-coin',     n:'USD Coin',       cap:'stable' },
+    { t:'BNB',  id:'binancecoin',  n:'BNB',            cap:'large' },
+    { t:'SOL',  id:'solana',       n:'Solana',         cap:'large' },
+    { t:'XRP',  id:'ripple',       n:'XRP',            cap:'large' },
+    { t:'ADA',  id:'cardano',      n:'Cardano',        cap:'mid' },
+    { t:'DOGE', id:'dogecoin',     n:'Dogecoin',       cap:'mid' },
+    { t:'TRX',  id:'tron',         n:'TRON',           cap:'mid' },
+    { t:'AVAX', id:'avalanche-2',  n:'Avalanche',      cap:'mid' },
+    { t:'DOT',  id:'polkadot',     n:'Polkadot',       cap:'mid' },
+    { t:'LINK', id:'chainlink',    n:'Chainlink',      cap:'mid' },
+    { t:'MATIC',id:'matic-network',n:'Polygon',        cap:'mid' },
+    { t:'POL',  id:'polygon-ecosystem-token', n:'Polygon (POL)', cap:'mid' },
+    { t:'LTC',  id:'litecoin',     n:'Litecoin',       cap:'mid' },
+    { t:'TON',  id:'the-open-network', n:'Toncoin',    cap:'mid' },
+    { t:'SHIB', id:'shiba-inu',    n:'Shiba Inu',      cap:'small' },
+    { t:'ATOM', id:'cosmos',       n:'Cosmos',         cap:'mid' },
+    { t:'UNI',  id:'uniswap',      n:'Uniswap',        cap:'mid' },
+    { t:'XLM',  id:'stellar',      n:'Stellar',        cap:'mid' },
+    { t:'NEAR', id:'near',         n:'NEAR Protocol',  cap:'mid' },
+    { t:'APT',  id:'aptos',        n:'Aptos',          cap:'mid' },
+    { t:'SUI',  id:'sui',          n:'Sui',            cap:'mid' },
+    { t:'ARB',  id:'arbitrum',     n:'Arbitrum',       cap:'small' },
+    { t:'OP',   id:'optimism',     n:'Optimism',       cap:'small' },
+    { t:'FIL',  id:'filecoin',     n:'Filecoin',       cap:'small' },
+    { t:'ETC',  id:'ethereum-classic', n:'Ethereum Classic', cap:'mid' },
+    { t:'ALGO', id:'algorand',     n:'Algorand',       cap:'small' },
+    { t:'VET',  id:'vechain',      n:'VeChain',        cap:'small' },
+    { t:'ICP',  id:'internet-computer', n:'Internet Computer', cap:'small' },
+    { t:'HBAR', id:'hedera-hashgraph', n:'Hedera',     cap:'mid' },
+    { t:'INJ',  id:'injective-protocol', n:'Injective', cap:'small' },
+    { t:'IMX',  id:'immutable-x',  n:'Immutable',      cap:'small' },
+    { t:'GRT',  id:'the-graph',    n:'The Graph',      cap:'small' },
+    { t:'AAVE', id:'aave',         n:'Aave',           cap:'small' },
+    { t:'MKR',  id:'maker',        n:'Maker',          cap:'small' },
+    { t:'LDO',  id:'lido-dao',     n:'Lido DAO',       cap:'small' },
+    { t:'STX',  id:'blockstack',   n:'Stacks',         cap:'small' },
+    { t:'TIA',  id:'celestia',     n:'Celestia',       cap:'small' },
+    { t:'SEI',  id:'sei-network',  n:'Sei',            cap:'small' },
+    { t:'RNDR', id:'render-token', n:'Render',         cap:'small' },
+    { t:'PEPE', id:'pepe',         n:'Pepe',           cap:'small' },
+    { t:'CRV',  id:'curve-dao-token', n:'Curve DAO',   cap:'small' },
+    { t:'SAND', id:'the-sandbox',  n:'The Sandbox',    cap:'small' },
+    { t:'MANA', id:'decentraland', n:'Decentraland',   cap:'small' },
+    { t:'FTM',  id:'fantom',       n:'Fantom',         cap:'small' },
+    { t:'XTZ',  id:'tezos',        n:'Tezos',          cap:'small' },
+    { t:'EGLD', id:'elrond-erd-2', n:'MultiversX',     cap:'small' },
+    { t:'KAS',  id:'kaspa',        n:'Kaspa',          cap:'small' }
+  ];
+  const CRYPTO_BY_TICKER = {};
+  CRYPTO_CATALOG.forEach(c => CRYPTO_BY_TICKER[c.t] = c);
+
+  G.DATA = { PROFILES, ETF_CATALOG, STOCK_UNIVERSE, CONCLUSIONS, ASSET_COLORS, PALETTE, REF_DATE,
+             CRYPTO_CATALOG, CRYPTO_BY_TICKER };
 })(window);

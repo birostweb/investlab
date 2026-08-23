@@ -15,7 +15,7 @@ const pub = path.join(root, 'public');
 
 /* L'ordre doit rester celui déclaré dans index.html : les modules se
    référencent au chargement (data.js avant store.js, etc.). */
-const ORDER = ['api.js', 'data.js', 'store.js', 'market.js', 'engine.js',
+const ORDER = ['api.js', 'data.js', 'store.js', 'market.js', 'vision.js', 'engine.js',
                'agent.js', 'charts.js', 'ui.js', 'main.js'];
 
 let html = await readFile(path.join(pub, 'index.html'), 'utf8');

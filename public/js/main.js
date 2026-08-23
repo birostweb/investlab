@@ -128,7 +128,9 @@
   function wireTopbar() {
     $('#btnRefresh').addEventListener('click', async () => {
       const btn = $('#btnRefresh');
-      if (!G.Market.hasProvider()) {
+      // CoinGecko cote les cryptos sans clé : on ne bloque que si RIEN n'est cotable.
+      const cotable = st().holdings.some(h => h.ticker && G.Market.canQuote(h.ticker));
+      if (!cotable) {
         U().toast("Aucun fournisseur configuré. Va dans Réglages pour ajouter une clé gratuite.", 'err');
         U().go('settings'); return;
       }
@@ -173,7 +175,7 @@
   function wirePortfolio() {
     $('#btnAddHolding').addEventListener('click', () => U().holdingModal());
     $('#btnAddTx').addEventListener('click', () => U().txModal());
-    $('#btnAddCash').addEventListener('click', () => U().cashModal());
+    $('#btnImportPhoto').addEventListener('click', () => G.Vision.openImport());
 
     document.addEventListener('click', e => {
       const b = e.target.closest('[data-act]'); if (!b) return;
@@ -181,8 +183,6 @@
       switch (b.dataset.act) {
         case 'edit-h': U().holdingModal(id); break;
         case 'del-h': if (confirm('Supprimer cette position et ses mouvements ?')) { G.Store.removeHolding(id); U().renderPortfolio(); U().renderDashboard(); } break;
-        case 'edit-c': U().cashModal(id); break;
-        case 'del-c': if (confirm('Supprimer ce compte de liquidités ?')) { G.Store.removeCash(id); U().renderPortfolio(); U().renderDashboard(); } break;
         case 'del-tx': if (confirm('Supprimer ce mouvement ?')) { G.Store.removeTransaction(id); U().renderPortfolio(); U().renderDashboard(); } break;
         case 'edit-b': U().brickModal(id); break;
         case 'del-b': if (confirm('Supprimer ce projet ?')) { G.Store.removeBrick(id); U().renderBricksList(); U().renderDashboard(); } break;
@@ -462,11 +462,11 @@
     bind('#setMonthly', e => { st().profile.monthlyBudget = Number(e.target.value) || 0; G.Store.save(); U().renderSettings(); });
     bind('#setCapital', e => { st().profile.availableCash = Number(e.target.value) || 0; G.Store.save(); U().renderSettings(); U().renderDashboard(); });
 
-    ['#tgtEtf', '#tgtActions', '#tgtImmo', '#tgtCash'].forEach(id => $(id).addEventListener('input', U().updateTargetSum));
+    ['#tgtEtf', '#tgtActions', '#tgtCrypto', '#tgtImmo'].forEach(id => $(id).addEventListener('input', U().updateTargetSum));
     $('#btnSaveTarget').addEventListener('click', () => {
       const t = { etf: Number($('#tgtEtf').value) || 0, actions: Number($('#tgtActions').value) || 0,
-                  immobilier: Number($('#tgtImmo').value) || 0, cash: Number($('#tgtCash').value) || 0 };
-      const sum = t.etf + t.actions + t.immobilier + t.cash;
+                  crypto: Number($('#tgtCrypto').value) || 0, immobilier: Number($('#tgtImmo').value) || 0 };
+      const sum = t.etf + t.actions + t.crypto + t.immobilier;
       if (sum !== 100) { U().toast(`Le total doit faire 100 % (actuellement ${sum} %).`, 'err'); return; }
       st().profile.target = t; G.Store.save();
       U().renderDashboard(); U().toast('Allocation cible enregistrée.', 'ok');

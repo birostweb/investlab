@@ -91,20 +91,58 @@ test('snapshot consolide valeurs, plus-values et allocation', () => {
   const w = fresh();
   w.Store.addHolding({ type: 'etf', ticker: 'CW8', quantity: 10, avgPrice: 400, lastPrice: 500 });
   w.Store.addHolding({ type: 'action', ticker: 'AAPL', quantity: 10, avgPrice: 100, lastPrice: 150 });
+  w.Store.addHolding({ type: 'crypto', ticker: 'BTC', quantity: 0.05, avgPrice: 40000, lastPrice: 50000 });
   w.Store.addBrick({ name: 'Lyon', amount: 1000, yieldPct: 9 });
-  w.Store.addCash({ label: 'Livret A', amount: 2500 });
 
   const s = w.Store.snapshot();
   assert.strictEqual(s.etfValue, 5000);
   assert.strictEqual(s.stockValue, 1500);
+  assert.strictEqual(s.cryptoValue, 2500);
   assert.strictEqual(s.bricksValue, 1000);
-  assert.strictEqual(s.cashValue, 2500);
   assert.strictEqual(s.total, 10000);
-  assert.strictEqual(s.pl, 1500, '(5000-4000) + (1500-1000)');
+  assert.strictEqual(s.pl, 2000, '(5000-4000) + (1500-1000) + (2500-2000)');
   assert.strictEqual(s.alloc.etf, 50);
-  assert.strictEqual(s.alloc.cash, 25);
+  assert.strictEqual(s.alloc.crypto, 25);
   const somme = Object.values(s.alloc).reduce((a, b) => a + b, 0);
   assert.ok(Math.abs(somme - 100) < 1e-9, 'l\'allocation totalise 100 %');
+});
+
+test('les liquidités ne comptent pas dans le patrimoine', () => {
+  const w = fresh();
+  w.Store.addHolding({ type: 'etf', ticker: 'CW8', quantity: 10, avgPrice: 400, lastPrice: 400 });
+  w.Store.addCash({ label: 'Livret A', amount: 9999 });     // saisi jadis, conservé
+  w.Store.state.profile.availableCash = 5000;               // paramètre de « Mon plan »
+  const s = w.Store.snapshot();
+  assert.strictEqual(s.total, 4000, 'ni le livret ni le capital disponible n\'entrent au patrimoine');
+  assert.strictEqual(s.cashValue, undefined, 'la notion de liquidités a disparu du snapshot');
+  assert.strictEqual(w.Store.state.cashAccounts.length, 1, 'la donnée saisie n\'est pas détruite');
+});
+
+test('une cible héritée avec `cash` est migrée vers `crypto`', () => {
+  const w = fresh();
+  w.Store.importJSON(JSON.stringify({
+    profile: { target: { etf: 60, actions: 15, immobilier: 20, cash: 5 } }
+  }));
+  const t = w.Store.state.profile.target;
+  assert.strictEqual(t.crypto, 5, 'l\'ancien poids liquidités devient le poids crypto');
+  assert.strictEqual(t.cash, undefined);
+  assert.strictEqual(t.etf + t.actions + t.crypto + t.immobilier, 100, 'la cible totalise toujours 100 %');
+});
+
+test('une position de type inconnu reste valorisable', () => {
+  const w = fresh();
+  w.Store.importJSON(JSON.stringify({
+    holdings: [{ id: 'x', type: 'obligation', ticker: 'Z', quantity: 2, avgPrice: 50 }]
+  }));
+  assert.strictEqual(w.Store.state.holdings[0].type, 'etf');
+  assert.strictEqual(w.Store.snapshot().total, 100);
+});
+
+test('cryptoMeta reconnaît un ticker seul comme une paire', () => {
+  const w = fresh();
+  assert.strictEqual(w.Store.cryptoMeta('btc').id, 'bitcoin');
+  assert.strictEqual(w.Store.cryptoMeta('ETH/EUR').id, 'ethereum');
+  assert.strictEqual(w.Store.cryptoMeta('AAPL'), null);
 });
 
 test('un portefeuille vide ne produit ni NaN ni division par zéro', () => {
@@ -124,12 +162,7 @@ test('un projet remboursé ou perdu sort de la poche immobilière', () => {
   assert.strictEqual(w.Store.snapshot().bricksValue, 1000);
 });
 
-test('les liquidités du profil s\'ajoutent aux comptes', () => {
-  const w = fresh();
-  w.Store.addCash({ label: 'Livret', amount: 1000 });
-  w.Store.state.profile.availableCash = 500;
-  assert.strictEqual(w.Store.snapshot().cashValue, 1500);
-});
+
 
 /* ============================================================ REVENUS === */
 test('incomeLast12m ne retient que les revenus de moins d\'un an', () => {
@@ -203,4 +236,29 @@ test('addTransaction déduit le montant de quantité × prix', () => {
   const w = fresh();
   const t = w.Store.addTransaction({ kind: 'buy', quantity: 4, price: 25 });
   assert.strictEqual(t.amount, 100);
+});
+
+/* ============================================== FUSION D'ÉTAT (régression) ==
+   `typeof null` vaut 'object'. Sans garde-fou, fusionner un état vierge (où
+   settings.lastRefresh vaut null) avec un état enregistré (où il vaut une date)
+   levait « Cannot use 'in' operator » — l'application ne démarrait donc plus
+   dès le premier rechargement suivant un rafraîchissement des cours.        */
+test('un champ null de l\'état vierge accepte une valeur enregistrée', () => {
+  const w = fresh();
+  assert.strictEqual(w.Store.state.settings.lastRefresh, null, 'null dans l\'état vierge');
+  w.Store.replaceState({ settings: { lastRefresh: '2026-08-23T10:00:00.000Z' } });
+  assert.strictEqual(w.Store.state.settings.lastRefresh, '2026-08-23T10:00:00.000Z');
+});
+
+test('replaceState survit à des types incompatibles sans lever', () => {
+  const w = fresh();
+  for (const bizarre of [
+    { settings: { keys: 'pas-un-objet' } },
+    { profile: null },
+    { holdings: 'pas-un-tableau' },
+    { settings: { lastRefresh: { imbrique: true } } }
+  ]) {
+    assert.doesNotThrow(() => w.Store.replaceState(bizarre), JSON.stringify(bizarre));
+  }
+  assert.ok(Number.isFinite(w.Store.snapshot().total));
 });

@@ -14,6 +14,29 @@ const TTL = {
 };
 const STALE_MAX = 7 * 24 * 3600e3;   // au-delà, on ne sert plus le cache périmé
 
+/* CoinGecko : gratuit et sans clé, comme Frankfurter pour le change.
+   Les cours crypto fonctionnent donc sans aucune configuration.
+   La table doit rester alignée sur public/js/data.js (CRYPTO_CATALOG). */
+const COINGECKO_IDS = {
+  BTC:'bitcoin', ETH:'ethereum', USDT:'tether', USDC:'usd-coin', BNB:'binancecoin',
+  SOL:'solana', XRP:'ripple', ADA:'cardano', DOGE:'dogecoin', TRX:'tron',
+  AVAX:'avalanche-2', DOT:'polkadot', LINK:'chainlink', MATIC:'matic-network',
+  POL:'polygon-ecosystem-token', LTC:'litecoin', TON:'the-open-network', SHIB:'shiba-inu',
+  ATOM:'cosmos', UNI:'uniswap', XLM:'stellar', NEAR:'near', APT:'aptos', SUI:'sui',
+  ARB:'arbitrum', OP:'optimism', FIL:'filecoin', ETC:'ethereum-classic', ALGO:'algorand',
+  VET:'vechain', ICP:'internet-computer', HBAR:'hedera-hashgraph', INJ:'injective-protocol',
+  IMX:'immutable-x', GRT:'the-graph', AAVE:'aave', MKR:'maker', LDO:'lido-dao',
+  STX:'blockstack', TIA:'celestia', SEI:'sei-network', RNDR:'render-token', PEPE:'pepe',
+  CRV:'curve-dao-token', SAND:'the-sandbox', MANA:'decentraland', FTM:'fantom',
+  XTZ:'tezos', EGLD:'elrond-erd-2', KAS:'kaspa'
+};
+/** Décompose « BTC » ou « BTC/EUR » en { id, base, quote } si c'est une crypto. */
+function cryptoOf(symbol) {
+  const [base, quote] = String(symbol || '').toUpperCase().split('/');
+  const id = COINGECKO_IDS[base];
+  return id ? { id, base, quote: quote || 'EUR' } : null;
+}
+
 class Providers {
   constructor(env, cache, log) {
     this.keys = {
@@ -32,10 +55,14 @@ class Providers {
       { name: 'Twelve Data', on: !!this.keys.twelvedata, role: 'cours et historiques' },
       { name: 'Finnhub', on: !!this.keys.finnhub, role: 'fondamentaux des actions' },
       { name: 'Alpha Vantage', on: !!this.keys.alphavantage, role: 'secours' },
+      { name: 'CoinGecko', on: true, role: 'cours des cryptoactifs' },
       { name: 'Frankfurter (BCE)', on: true, role: 'taux de change' }
     ];
   }
   hasAny() { return !!(this.keys.twelvedata || this.keys.finnhub || this.keys.alphavantage); }
+  /** CoinGecko ne demande aucune clé : un symbole crypto est toujours servable,
+   *  même sans le moindre fournisseur actions configuré. */
+  canServe(symbol) { return this.hasAny() || !!cryptoOf(symbol); }
 
   async getJSON(url, timeoutMs) {
     const ctl = new AbortController();
@@ -82,12 +109,34 @@ class Providers {
     const key = 'q:' + symbol;
     if (opts.force) this.cache.delete(key);
     return this.cached(key, TTL.quote, async () => {
+      // Les cryptos passent d'abord par CoinGecko : gratuit, sans clé, et il
+      // couvre les jetons que les fournisseurs actions ne cotent pas.
+      const c = cryptoOf(symbol);
+      if (c) {
+        try { const v = await this._quoteCoinGecko(c); if (v) return v; }
+        catch (e) { /* on retombe sur les fournisseurs génériques */ }
+      }
       for (const fn of ['_quoteTwelve', '_quoteFinnhub', '_quoteAlpha']) {
         try { const v = await this[fn](symbol); if (v) return v; }
         catch (e) { /* fournisseur suivant */ }
       }
       return null;
     });
+  }
+  async _quoteCoinGecko(c) {
+    const vs = c.quote.toLowerCase();
+    const j = await this.throttle('cg', 2500, () => this.getJSON(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(c.id)}` +
+      `&vs_currencies=${encodeURIComponent(vs)}&include_24hr_change=true&include_last_updated_at=true`, 12000));
+    const row = j && j[c.id];
+    const price = U.num(row && row[vs]);
+    if (price == null) return null;
+    return {
+      price, currency: c.quote,
+      changePct: U.num(row[vs + '_24h_change']),
+      name: c.base, source: 'CoinGecko',
+      asOf: row.last_updated_at ? U.isoDate(row.last_updated_at * 1000) : U.isoDate()
+    };
   }
   async _quoteTwelve(symbol) {
     if (!this.keys.twelvedata) return null;
@@ -135,7 +184,19 @@ class Providers {
     if (opts.force) this.cache.delete(key);
     return this.cached(key, TTL.series, async () => {
       let closes = null, src = null;
-      if (this.keys.twelvedata) {
+      const c = cryptoOf(symbol);
+      if (c) {
+        try {
+          const j = await this.throttle('cg', 2500, () => this.getJSON(
+            `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(c.id)}/market_chart` +
+            `?vs_currency=${encodeURIComponent(c.quote.toLowerCase())}&days=365&interval=daily`, 20000));
+          if (j && Array.isArray(j.prices) && j.prices.length > 30) {
+            closes = j.prices.map(([ms, v]) => ({ d: U.isoDate(ms), c: U.num(v) })).filter(x => x.c != null);
+            src = 'CoinGecko';
+          }
+        } catch (e) { /* on tente les fournisseurs génériques */ }
+      }
+      if (!closes && this.keys.twelvedata) {
         try {
           const j = await this.throttle('td', 8000, () => this.getJSON(
             `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}` +
@@ -337,4 +398,4 @@ function clean(o) {
   return out;
 }
 
-module.exports = { Providers, computeStats, sampleSeries, TTL };
+module.exports = { Providers, computeStats, sampleSeries, cryptoOf, COINGECKO_IDS, TTL };

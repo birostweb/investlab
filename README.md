@@ -11,6 +11,7 @@ Trois façons de l'utiliser, avec **exactement les mêmes analyses** :
 | Accès | `localhost:3000` | ton domaine, tous tes appareils | le fichier |
 | Clés d'API | dans `.env`, côté serveur | sur le serveur, jamais dans le navigateur | saisies dans l'app |
 | Cours | bouton « Actualiser » + auto | rafraîchis **automatiquement** | bouton « Actualiser » |
+| Import par photo | clé Anthropic dans `.env` | clé Anthropic sur le serveur | clé saisie dans l'app |
 | Données | `./data/` | sur ton VPS, synchronisées | dans ce navigateur |
 | Accès protégé | mot de passe (facultatif) | mot de passe | — |
 
@@ -63,7 +64,7 @@ Dans le conteneur, `DATA_DIR` vaut `/data` (fixé par le `Dockerfile`) et doit
 |---|---|
 | `npm start` | démarre le serveur |
 | `npm run dev` | idem, en chargeant `.env` |
-| `npm test` | lance les 94 tests (aucune dépendance, aucun réseau) |
+| `npm test` | lance les 116 tests (aucune dépendance, aucun réseau) |
 | `npm run build:offline` | génère `MonInvestisseurIA.html` |
 
 ---
@@ -74,9 +75,9 @@ Dans le conteneur, `DATA_DIR` vaut `/data` (fixé par le `Dockerfile`) et doit
 npm test
 ```
 
-94 tests couvrent la logique pure — sécurité des chemins et des jetons,
-persistance atomique, calculs de portefeuille, dates, moteurs de scoring et
-simulateur. Ils s'exécutent avec le lanceur intégré de Node (`node:test`) :
+116 tests couvrent la logique pure — sécurité des chemins et des jetons,
+persistance atomique, calculs de portefeuille, dates, moteurs de scoring,
+simulateur et lecture des captures d'écran. Ils s'exécutent avec le lanceur intégré de Node (`node:test`) :
 ni framework, ni réseau, ni serveur à démarrer.
 
 Au **démarrage**, le serveur lance en plus un autotest et l'écrit dans les
@@ -96,15 +97,23 @@ Doit répondre un JSON contenant `"ok":true`.
 
 | Clé | Sert à | Où |
 |---|---|---|
-| **Twelve Data** | cours et historiques — *la plus utile* | [twelvedata.com/pricing](https://twelvedata.com/pricing) — 800 req/jour |
+| **Twelve Data** | cours et historiques des ETF et actions | [twelvedata.com/pricing](https://twelvedata.com/pricing) — 800 req/jour |
 | **Finnhub** | fondamentaux des actions (PER, marges, dette) | [finnhub.io/register](https://finnhub.io/register) |
 | **Alpha Vantage** | secours (facultatif) | [alphavantage.co](https://www.alphavantage.co/support/#api-key) |
+| **Anthropic** | lecture des captures d'écran + chat | [console.anthropic.com](https://console.anthropic.com/) — payant à l'usage |
 
-Sans aucune clé, l'application fonctionne : analyse de portefeuille, allocation,
-rééquilibrage, plan, simulateur et immobilier. Seuls les cours et les
-fondamentaux manquent — et l'agent te le dit plutôt que d'inventer.
+Deux sources ne demandent **aucune clé** et fonctionnent toujours :
 
-Les taux de change viennent de **Frankfurter (BCE)**, qui ne demande pas de clé.
+- **CoinGecko** — cours et historiques des **cryptoactifs** ;
+- **Frankfurter (BCE)** — taux de change.
+
+Autrement dit : un portefeuille **entièrement crypto se valorise sans rien
+configurer**. Les clés ci-dessus ne servent qu'aux ETF, aux actions et à
+l'import par photo.
+
+Sans aucune clé, le reste fonctionne aussi : analyse de portefeuille, allocation,
+rééquilibrage, plan, simulateur et immobilier. Ce qui manque manque
+explicitement — l'agent le dit plutôt que d'inventer.
 
 ---
 
@@ -200,8 +209,14 @@ chose en PowerShell et n'est conservé que pour compatibilité.
   investissements mensuels, revenus, rendement courant.
 - **InvestAI** — l'agent. « j'ai 300 € à investir ce mois-ci », « est-ce que je
   suis assez diversifié ? », « compare ETF et Bricks ».
-- **Portefeuille** — positions, liquidités, mouvements, et les expositions
-  géographiques et sectorielles calculées **en transparence** (ETF décomposés).
+- **Portefeuille** — positions, mouvements, et les expositions géographiques et
+  sectorielles calculées **en transparence** (ETF décomposés).
+- **Import par photo** — envoie des captures d'écran de Binance, Bitstack,
+  Crypto.com, ton courtier… InvestAI en extrait les positions et te les présente
+  dans un tableau **que tu valides ligne par ligne** avant toute création.
+- **Crypto** — les cryptoactifs sont une classe d'actifs à part entière, cotée
+  par CoinGecko sans clé d'API, avec sa propre cible d'allocation et son propre
+  plafond de risque par profil.
 - **ETF** — classement sur les frais, la diversification, l'encours,
   l'antériorité, le rendement ajusté du risque, l'apport à ton portefeuille et
   le rôle long terme (cœur ou satellite).
@@ -217,7 +232,36 @@ Pour découvrir l'interface sans saisir tes vraies données :
 
 ---
 
-## 7. Les règles codées dans le moteur
+## 7. Importer un portefeuille depuis des photos
+
+**Portefeuille → ⤢ Importer une photo.** Dépose jusqu'à 8 captures d'écran
+(Binance, Bitstack, Crypto.com, Coinbase, Kraken, ton courtier…). Les images
+sont réduites dans ton navigateur, envoyées à Claude, et les positions lues
+s'affichent dans un tableau de vérification.
+
+**Rien n'est créé sans ta validation.** Chaque ligne porte :
+
+- un **niveau de confiance** de lecture (haute / moyenne / basse) ;
+- ce qui a été lu **littéralement**, en infobulle ;
+- les champs illisibles laissés **vides et surlignés en rouge** — jamais devinés.
+
+Tu décoches ce que tu ne veux pas, tu corriges ce qui est faux, puis tu crées.
+
+### Ce qu'il faut savoir
+
+- Il faut une **clé Anthropic** : `ANTHROPIC_API_KEY` côté serveur, ou saisie
+  dans **Réglages** en mode hors ligne. Sans elle, le bouton te le dit.
+- Un **prix de revient n'est jamais déduit d'un cours affiché**. Beaucoup
+  d'applications crypto ne montrent que le cours du moment : dans ce cas le PRU
+  reste vide et tu le saisis toi-même, sinon ta plus-value serait fausse.
+- Une lecture d'image **n'est pas une source de vérité**. Vérifie les quantités :
+  c'est le champ que les captures rognent le plus souvent.
+- Les images ne sont **pas conservées** : elles transitent, la réponse revient au
+  navigateur, rien n'est stocké côté serveur.
+
+---
+
+## 8. Les règles codées dans le moteur
 
 1. **Jamais de donnée inventée.** Chaque chiffre porte sa source et sa date.
 2. **Jamais de score partiel déguisé en score.** En dessous de 4 dimensions
@@ -232,7 +276,7 @@ Pour découvrir l'interface sans saisir tes vraies données :
 
 ---
 
-## 8. Limites, dites franchement
+## 9. Limites, dites franchement
 
 - **Bricks n'a pas d'API publique ouverte.** Les projets se saisissent à la
   main : aucune récupération non autorisée n'est faite.
@@ -250,12 +294,22 @@ Pour découvrir l'interface sans saisir tes vraies données :
   est marqué « devise non confirmée » ; si une conversion est nécessaire et que
   le taux BCE est indisponible, le cours n'est **pas** mis à jour plutôt que
   d'être inscrit dans la mauvaise devise.
+- **Aucun cryptoactif n'est noté.** Un jeton n'a ni bénéfice, ni dividende, ni
+  bilan : aucun score comparable à celui d'un ETF ou d'une action ne serait
+  honnête. L'application mesure ton **exposition** et son risque, elle ne
+  désigne jamais un jeton à acheter.
+- **La lecture de photos peut se tromper.** C'est pourquoi elle passe toujours
+  par un écran de validation. Ne l'utilise pas comme un import comptable.
+- **Les liquidités ne comptent pas dans le patrimoine** : elles vivent sur un
+  autre compte. « Capital disponible », dans Réglages, ne sert qu'à alimenter
+  « Mon plan ». Les comptes de liquidités saisis avant cette version sont
+  conservés dans tes données mais ne sont plus ni affichés ni valorisés.
 - **Ce n'est pas un conseil en investissement.** La décision finale
   t'appartient toujours.
 
 ---
 
-## 9. Sécurité
+## 10. Sécurité
 
 - Accès protégé par mot de passe, session signée en HMAC-SHA256, cookie
   `HttpOnly` + `SameSite=Lax` + `Secure` derrière HTTPS.
@@ -278,7 +332,7 @@ Pour découvrir l'interface sans saisir tes vraies données :
 
 ---
 
-## 10. En cas de problème
+## 11. En cas de problème
 
 | Symptôme | Cause probable | Solution |
 |---|---|---|
@@ -286,7 +340,9 @@ Pour découvrir l'interface sans saisir tes vraies données :
 | `EADDRINUSE` | le port 3000 est déjà pris | `PORT=3001 npm start`, ou arrête l'autre serveur |
 | `Cannot find module` | Node trop ancien | Node ≥ 20 requis (`node --version`) |
 | Page blanche | ouverture directe de `public/index.html` | passe par `npm start`, ou utilise `MonInvestisseurIA.html` |
-| « Aucun fournisseur configuré » | aucune clé d'API | normal — voir §3, ou ignore : le reste fonctionne |
+| « Aucun fournisseur configuré » | aucune clé d'API | normal pour les ETF/actions — les cryptos se cotent quand même |
+| Une crypto ne se cote pas | ticker absent du catalogue CoinGecko | ajoute-le dans `CRYPTO_CATALOG` (`public/js/data.js`) et `COINGECKO_IDS` (`server/lib/providers.js`) |
+| « La lecture de photo demande une clé » | `ANTHROPIC_API_KEY` absente | ajoute-la dans `.env` puis `npm run dev` |
 | L'écran de connexion refuse le mot de passe | `APP_PASSWORD` non transmis au processus | `npm run dev` avec un `.env`, ou passe-le en variable |
 | Trop de tentatives | limiteur de connexion déclenché | attends 15 minutes, ou redémarre le serveur |
 | Le fichier hors ligne est périmé | `public/` a changé depuis | `npm run build:offline` |
@@ -296,7 +352,7 @@ fournisseur et chaque rafraîchissement y sont tracés avec leur durée.
 
 ---
 
-## 11. Structure
+## 12. Structure
 
 ```
 investlab/
@@ -319,6 +375,7 @@ investlab/
 │     ├─ data.js           profils, catalogue ETF, univers de scan
 │     ├─ store.js          état et calculs de portefeuille
 │     ├─ market.js         accès aux données (serveur ou direct)
+│     ├─ vision.js         import de positions depuis des captures d'écran
 │     ├─ engine.js         moteurs d'analyse et de scoring
 │     ├─ agent.js          InvestAI : compréhension et réponses
 │     ├─ charts.js         graphiques SVG
@@ -333,5 +390,6 @@ investlab/
    ├─ store.test.js        persistance atomique, sauvegardes, corruption
    ├─ portfolio.test.js    dates, valorisation, import/export
    ├─ engine.test.js       confiance, scoring, plan, simulateur
+   ├─ vision.test.js       lecture des captures, normalisation, garde-fous
    └─ market-stats.test.js volatilité, drawdown, CAGR, échantillonnage
 ```

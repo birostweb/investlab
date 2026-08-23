@@ -33,11 +33,14 @@
         horizonYears: 10,
         monthlyBudget: 150,
         availableCash: 0,
-        target: Object.assign({}, G.DATA.PROFILES.equilibre.target)
+        target: Object.assign({}, G.DATA.PROFILES.equilibre.target)   // etf/actions/crypto/immobilier
       },
       holdings: [],      // ETF + actions
       bricks: [],        // immobilier participatif
-      cashAccounts: [],  // livrets, compte espèces
+      /* Les liquidités ne comptent plus dans le patrimoine (elles vivent sur un
+         autre compte). Le tableau est conservé pour ne perdre aucune donnée
+         déjà saisie, mais il n'est ni affiché ni valorisé. */
+      cashAccounts: [],
       transactions: [],  // achats/ventes/dividendes/versements
       journal: [],       // journal des décisions
       watchlist: [],     // tickers suivis
@@ -62,8 +65,8 @@
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
-        const parsed = JSON.parse(raw);
-        state = deepMerge(blankState(), parsed);
+        const parsed = migrateRaw(JSON.parse(raw));
+        state = migrate(deepMerge(blankState(), parsed));
       }
     } catch (e) { console.warn('Lecture du stockage impossible', e); }
     return state;
@@ -73,7 +76,7 @@
     if (!(G.Api && G.Api.isServer)) return false;
     const remote = await G.Api.loadState();
     if (remote && typeof remote === 'object') {
-      state = deepMerge(blankState(), remote);
+      state = migrate(deepMerge(blankState(), migrateRaw(remote)));
       // les clés d'API n'existent pas côté client en mode serveur
       state.settings.keys = { twelvedata: '', finnhub: '', alphavantage: '', anthropic: '' };
       saveLocalCopy();
@@ -83,7 +86,7 @@
   }
   /** Remplace l'état par celui fourni (après un rafraîchissement serveur). */
   function replaceState(obj) {
-    state = deepMerge(blankState(), obj);
+    state = migrate(deepMerge(blankState(), migrateRaw(obj)));
     saveLocalCopy();
     return state;
   }
@@ -99,10 +102,48 @@
       G.Api.saveState(payload, !!immediate);
     }
   }
+  const CLASSES = ['etf', 'actions', 'crypto', 'immobilier'];
+  /** Ne garde que les quatre classes suivies, en nombres. */
+  function normaliseTarget(t) {
+    const out = {};
+    CLASSES.forEach(k => out[k] = Number((t || {})[k]) || 0);
+    return out;
+  }
+
+  /* Migration d'un état ENREGISTRÉ, appliquée sur l'objet brut AVANT la fusion
+     avec blankState() : après la fusion, la cible par défaut aurait déjà rempli
+     `crypto`, et l'ancien poids `cash` serait perdu en silence. */
+  function migrateRaw(raw) {
+    if (!raw || typeof raw !== 'object') return raw;
+    const t = raw.profile && typeof raw.profile === 'object' && raw.profile.target;
+    if (t && typeof t === 'object' && t.cash != null && t.crypto == null) {
+      // La poche liquidités disparaît du patrimoine : son poids cible devient
+      // celui de la nouvelle poche crypto, pour que la somme reste à 100.
+      t.crypto = Number(t.cash) || 0;
+    }
+    if (t && typeof t === 'object') delete t.cash;
+    (Array.isArray(raw.holdings) ? raw.holdings : []).forEach(h => {
+      // un type inconnu resterait invalorisable : on le ramène à 'etf'
+      if (h && h.type !== 'etf' && h.type !== 'action' && h.type !== 'crypto') h.type = 'etf';
+    });
+    return raw;
+  }
+  /** Après fusion : la cible ne doit contenir que les classes suivies. */
+  function migrate(st) {
+    st.profile = st.profile || {};
+    st.profile.target = normaliseTarget(st.profile.target);
+    return st;
+  }
+
   function deepMerge(base, over) {
     if (over === null || over === undefined) return base;
+    // `typeof null` vaut 'object' : sans ce garde-fou, un champ valant null dans
+    // l'état vierge (settings.lastRefresh, par exemple) faisait planter la fusion
+    // dès que l'état enregistré y mettait une chaîne — donc à chaque rechargement
+    // suivant un rafraîchissement des cours.
+    if (base === null || base === undefined) return over;
     if (Array.isArray(base)) return Array.isArray(over) ? over : base;
-    if (typeof base !== 'object') return over;
+    if (typeof base !== 'object' || typeof over !== 'object') return over;
     const out = Object.assign({}, base);
     Object.keys(over).forEach(k => {
       out[k] = (k in base) ? deepMerge(base[k], over[k]) : over[k];
@@ -186,6 +227,11 @@
       e.id.toUpperCase() === q || (e.ticker || '').toUpperCase() === q || (e.isin || '').toUpperCase() === q);
   }
 
+  /** Fiche d'un cryptoactif du catalogue, à partir de son ticker. */
+  function cryptoMeta(ticker) {
+    return G.DATA.CRYPTO_BY_TICKER[String(ticker || '').toUpperCase().split('/')[0]] || null;
+  }
+
   /* --------------------------------------------------- valorisation positions */
   /** Prix retenu pour une ligne : dernier prix de marché si disponible,
    *  sinon prix de revient (et on le signale — jamais de prix inventé). */
@@ -213,31 +259,33 @@
 
     const etfValue = holdings.filter(h => h.type === 'etf').reduce((s, h) => s + h._value, 0);
     const stockValue = holdings.filter(h => h.type === 'action').reduce((s, h) => s + h._value, 0);
+    const cryptoValue = holdings.filter(h => h.type === 'crypto').reduce((s, h) => s + h._value, 0);
     const bricksValue = state.bricks
       .filter(b => b.status !== 'remboursé' && b.status !== 'perdu')
       .reduce((s, b) => s + (Number(b.amount) || 0), 0);
-    const cashValue = state.cashAccounts.reduce((s, c) => s + (Number(c.amount) || 0), 0)
-      + (Number(state.profile.availableCash) || 0);
 
-    const invested = etfValue + stockValue + bricksValue;
-    const total = invested + cashValue;
+    /* Les liquidités ne font PAS partie du patrimoine suivi ici : elles vivent
+       sur un autre compte. `profile.availableCash` reste seulement un paramètre
+       de « Mon plan » — le capital que tu es prêt à déployer. */
+    const invested = etfValue + stockValue + cryptoValue + bricksValue;
+    const total = invested;
 
-    const cost = holdings.reduce((s, h) => s + h._cost, 0) + bricksValue;
-    const pl = (etfValue + stockValue) - holdings.reduce((s, h) => s + h._cost, 0);
-    const plPct = holdings.reduce((s, h) => s + h._cost, 0) > 0
-      ? (pl / holdings.reduce((s, h) => s + h._cost, 0)) * 100 : 0;
+    const marketCost = holdings.reduce((s, h) => s + h._cost, 0);
+    const cost = marketCost + bricksValue;
+    const pl = (etfValue + stockValue + cryptoValue) - marketCost;
+    const plPct = marketCost > 0 ? (pl / marketCost) * 100 : 0;
 
-    const alloc = { etf: 0, actions: 0, immobilier: 0, cash: 0 };
+    const alloc = { etf: 0, actions: 0, crypto: 0, immobilier: 0 };
     if (total > 0) {
       alloc.etf = etfValue / total * 100;
       alloc.actions = stockValue / total * 100;
+      alloc.crypto = cryptoValue / total * 100;
       alloc.immobilier = bricksValue / total * 100;
-      alloc.cash = cashValue / total * 100;
     }
 
     return {
-      holdings, etfValue, stockValue, bricksValue, cashValue, invested, total, cost, pl, plPct, alloc,
-      target: state.profile.target,
+      holdings, etfValue, stockValue, cryptoValue, bricksValue, invested, total, cost, pl, plPct, alloc,
+      target: normaliseTarget(state.profile.target),
       profile: G.DATA.PROFILES[state.profile.riskProfile] || G.DATA.PROFILES.equilibre
     };
   }
@@ -290,7 +338,7 @@
   function importJSON(txt) {
     const parsed = JSON.parse(txt);
     const keys = state.settings.keys;                 // on garde les clés locales
-    state = deepMerge(blankState(), parsed);
+    state = migrate(deepMerge(blankState(), migrateRaw(parsed)));
     state.settings.keys = keys;
     save();
   }
@@ -309,7 +357,7 @@
     addTransaction, removeTransaction,
     addJournal, updateJournal, removeJournal,
     addWatch, removeWatch,
-    etfCatalog, findCatalog,
+    etfCatalog, findCatalog, cryptoMeta, normaliseTarget, CLASSES,
     priceOf, valueOf, costOf, snapshot,
     investedInMonth, monthlySeries, incomeLast12m, currentYield,
     exportJSON, importJSON, wipe, blankState

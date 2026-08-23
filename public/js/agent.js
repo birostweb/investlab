@@ -225,8 +225,8 @@
 
     let o = header(`Où placer ${eur(amount)} ?`);
     o += `J'ai d'abord regardé ce que tu détiens : **${eur(s.total)}** au total, ` +
-      `réparti en ${pctA(s.alloc.etf)} ETF · ${pctA(s.alloc.actions)} actions · ${pctA(s.alloc.immobilier)} immobilier · ${pctA(s.alloc.cash)} liquidités. ` +
-      `Ta cible est ${s.target.etf}/${s.target.actions}/${s.target.immobilier}/${s.target.cash}.\n\n`;
+      `réparti en ${pctA(s.alloc.etf)} ETF · ${pctA(s.alloc.actions)} actions · ${pctA(s.alloc.crypto)} crypto · ${pctA(s.alloc.immobilier)} immobilier. ` +
+      `Ta cible est ${s.target.etf}/${s.target.actions}/${s.target.crypto}/${s.target.immobilier}.\n\n`;
 
     if (!plan.thisMonth.length) {
       o += `Je n'ai pas de répartition à proposer : aucun support n'est exploitable avec les données dont je dispose.\n`;
@@ -555,10 +555,11 @@
       }
     }
     const a = E().analysePortfolio();
-    if (a.snap.alloc.cash > 30) {
-      o += `**Dans ta situation** : tu as ${pctA(a.snap.alloc.cash)} de liquidités. Plutôt que d'attendre un signal qui ne viendra pas, j'étalerais ce capital sur **3 à 6 versements mensuels**. Tu gardes une part du bénéfice d'être investi tôt, tout en limitant le regret si le marché baisse juste après.\n`;
+    const dispo = Number(G.Store.state.profile.availableCash) || 0;
+    if (dispo > 0 && dispo > (Number(G.Store.state.profile.monthlyBudget) || 0) * 6) {
+      o += `**Dans ta situation** : tu as ${eur(dispo)} de capital disponible. Plutôt que d'attendre un signal qui ne viendra pas, j'étalerais ce capital sur **3 à 6 versements mensuels**. Tu gardes une part du bénéfice d'être investi tôt, tout en limitant le regret si le marché baisse juste après.\n`;
     } else {
-      o += `**Dans ta situation** : ta trésorerie est déjà largement investie (${pctA(a.snap.alloc.cash)} de liquidités). La question du moment se pose surtout pour tes versements à venir — et pour eux, la régularité fait le travail.\n`;
+      o += `**Dans ta situation** : ton capital est déjà largement investi. La question du moment se pose surtout pour tes versements à venir — et pour eux, la régularité fait le travail.\n`;
     }
     return o;
   }
@@ -725,7 +726,7 @@
   /* ----------------------------------------------------------------- Aide */
   function respHelp() {
     const snap = G.Store.snapshot();
-    let o = `Bonjour. Je suis **InvestAI**, ton analyste. Je connais ton portefeuille — ${eur(snap.total)} répartis en ${pctA(snap.alloc.etf)} ETF, ${pctA(snap.alloc.actions)} actions, ${pctA(snap.alloc.immobilier)} immobilier et ${pctA(snap.alloc.cash)} liquidités — et je le regarde **avant** de te proposer quoi que ce soit.\n\n`;
+    let o = `Bonjour. Je suis **InvestAI**, ton analyste. Je connais ton portefeuille — ${eur(snap.total)} répartis en ${pctA(snap.alloc.etf)} ETF, ${pctA(snap.alloc.actions)} actions, ${pctA(snap.alloc.crypto)} crypto et ${pctA(snap.alloc.immobilier)} immobilier — et je le regarde **avant** de te proposer quoi que ce soit.\n\n`;
     o += `Tu peux me demander par exemple :\n\n`;
     o += `- « J'ai 300 € à investir ce mois-ci. »\n- « Trouve-moi les meilleurs ETF pour mon profil. »\n- « Est-ce qu'Apple est trop chère ? »\n- « Compare Apple, Microsoft et Nvidia. »\n- « Est-ce que je suis suffisamment diversifié ? »\n- « Quel serait le meilleur plan si j'investis 150 € tous les mois pendant 10 ans ? »\n- « Compare ETF et Bricks pour mon portefeuille. »\n- « Dois-je acheter maintenant ou attendre ? »\n\n`;
     o += `<span class="muted sm">Je ne te dirai jamais qu'un actif va monter, et je te dirai quand je n'ai pas assez de données pour conclure.</span>`;
@@ -786,7 +787,7 @@
       },
       patrimoine: {
         total_eur: Math.round(s.total), etf_eur: Math.round(s.etfValue), actions_eur: Math.round(s.stockValue),
-        immobilier_eur: Math.round(s.bricksValue), liquidites_eur: Math.round(s.cashValue),
+        crypto_eur: Math.round(s.cryptoValue), immobilier_eur: Math.round(s.bricksValue),
         plus_value_eur: Math.round(s.pl), plus_value_pct: +s.plPct.toFixed(2),
         allocation_reelle_pct: Object.fromEntries(Object.entries(s.alloc).map(([k, v]) => [k, +v.toFixed(1)])),
         investi_ce_mois_eur: G.Store.investedInMonth(),
@@ -916,7 +917,7 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
       return `Bonjour. Ton portefeuille est encore vide. Commence par saisir tes positions réelles dans <b>Portefeuille</b> — je ne peux rien analyser d'utile sans savoir ce que tu détiens.`;
     }
     const bits = [];
-    const LBL = { etf:'ta poche ETF', actions:'ta poche actions', immobilier:'ton immobilier', cash:'ta trésorerie' };
+    const LBL = { etf:'ta poche ETF', actions:'ta poche actions', crypto:'ta poche crypto', immobilier:'ton immobilier' };
     const maxDrift = a.drift.reduce((m, d) => Math.abs(d.gap) > Math.abs(m.gap) ? d : m, a.drift[0]);
 
     // 1) où en est l'allocation

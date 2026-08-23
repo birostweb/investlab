@@ -341,6 +341,7 @@ table.tbl td.num,table.tbl th.num{text-align:right}
 .tag.etf{color:var(--c1);border-color:#254156;background:var(--navy-soft)}
 .tag.action{color:var(--c2);border-color:#3a3255;background:#171426}
 .tag.immo{color:var(--c3);border-color:#4a3a1c;background:var(--gold-soft)}
+.tag.crypto{color:#e0913a;border-color:#4d3418;background:#1e1408}
 .tag.cash{color:var(--c4);border-color:#1e4440;background:#0f1d1b}
 .tag.pea{color:var(--pos);border-color:#1e4433;background:var(--pos-soft)}
 .mini-table{display:flex;flex-direction:column}
@@ -492,6 +493,43 @@ svg{display:block;overflow:visible}
 ::-webkit-scrollbar-thumb:hover{background:var(--rule-strong)}
 ::selection{background:rgba(77,141,214,.28)}
 
+/* ============================================================================
+   Import par photo — dépôt d'images, vignettes, tableau de validation
+   ========================================================================== */
+.modal-backdrop.wide .modal{width:min(1080px,100%)}
+
+.v-drop{border:1px dashed var(--rule-2);border-radius:var(--r-lg);background:var(--surface-2);
+  padding:26px 18px;text-align:center;transition:border-color .15s,background .15s}
+.v-drop.over{border-color:var(--c1);background:var(--navy-soft)}
+.v-drop-in{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:12px;color:var(--ink-2)}
+.v-drop-icon{font-size:22px;color:var(--ink-4)}
+
+.v-thumbs{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.v-thumb{position:relative;width:96px;display:flex;flex-direction:column;gap:4px}
+.v-thumb img{width:96px;height:96px;object-fit:cover;border-radius:var(--r);
+  border:1px solid var(--rule-2);background:var(--surface-3)}
+.v-thumb span{font-size:9.5px;color:var(--ink-4);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v-thumb-x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;
+  border:1px solid var(--rule-2);background:var(--surface-3);color:var(--ink-3);
+  font-size:10px;line-height:1;cursor:pointer}
+.v-thumb-x:hover{background:var(--neg-soft);color:var(--neg);border-color:var(--neg)}
+
+.v-status{margin-top:14px;font-size:12px;min-height:18px}
+.v-err{color:var(--neg);background:var(--neg-soft);border:1px solid var(--neg);
+  border-radius:var(--r);padding:10px 12px;font-size:11.5px}
+.v-warn{background:var(--gold-soft);border:1px solid #4a3a1c;color:var(--c3);
+  border-radius:var(--r);padding:10px 12px;font-size:11px;margin-bottom:12px}
+
+.v-review td{padding:5px 6px;vertical-align:middle}
+.v-review .input.sm{padding:5px 7px;font-size:11px;width:100%;min-width:62px}
+.v-review .input.sm.num{text-align:right}
+.v-review td.v-miss .input{border-color:var(--neg);background:var(--neg-soft)}
+.v-cf{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;
+  padding:2px 6px;border-radius:var(--r);border:1px solid var(--rule-2);cursor:help}
+.v-cf-ok{color:var(--pos);border-color:#1e4433;background:var(--pos-soft)}
+.v-cf-mid{color:var(--c3);border-color:#4a3a1c;background:var(--gold-soft)}
+.v-cf-low{color:var(--neg);border-color:var(--neg);background:var(--neg-soft)}
+
 </style>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
 </head>
@@ -583,7 +621,7 @@ svg{display:block;overflow:visible}
           </div>
           <div class="hero-stats">
             <div class="stat"><span>Investi ce mois</span><strong id="statMonth">—</strong></div>
-            <div class="stat"><span>Liquidités</span><strong id="statCash">—</strong></div>
+            <div class="stat"><span>Crypto</span><strong id="statCrypto">—</strong></div>
             <div class="stat"><span>Revenus 12 mois</span><strong id="statIncome">—</strong></div>
             <div class="stat"><span>Rendement courant</span><strong id="statYield">—</strong></div>
           </div>
@@ -657,7 +695,7 @@ svg{display:block;overflow:visible}
             <div class="row-actions">
               <button class="btn sm" id="btnAddHolding">+ Position</button>
               <button class="btn sm ghost" id="btnAddTx">+ Mouvement</button>
-              <button class="btn sm ghost" id="btnAddCash">+ Liquidités</button>
+              <button class="btn sm ghost" id="btnImportPhoto">⤢ Importer une photo</button>
             </div>
           </div>
           <div id="holdingsTable" class="table-wrap"></div>
@@ -842,8 +880,8 @@ svg{display:block;overflow:visible}
           <div class="form-row">
             <label>ETF % <input class="input" type="number" id="tgtEtf"></label>
             <label>Actions % <input class="input" type="number" id="tgtActions"></label>
+            <label>Crypto % <input class="input" type="number" id="tgtCrypto"></label>
             <label>Immobilier % <input class="input" type="number" id="tgtImmo"></label>
-            <label>Liquidités % <input class="input" type="number" id="tgtCash"></label>
             <button class="btn sm" id="btnSaveTarget">Enregistrer</button>
           </div>
         </div>
@@ -1119,10 +1157,11 @@ svg{display:block;overflow:visible}
   const PROFILES = {
     prudent: {
       key: 'prudent', label: 'Prudent',
-      target: { etf: 45, actions: 5, immobilier: 20, cash: 30 },
+      target: { etf: 60, actions: 10, crypto: 5, immobilier: 25 },
       maxSinglePosition: 12,       // % max d'une ligne
       maxSectorExposure: 25,
       maxStockSleeve: 10,          // % max en actions en direct
+      maxCryptoSleeve: 8,          // % max en cryptoactifs
       volTolerance: 10,            // volatilité annualisée tolérée (%)
       maxDrawdownTolerance: 20,
       hypotheses: { pess: 0.5, central: 3.0, opti: 5.0, vol: 7 },
@@ -1130,10 +1169,11 @@ svg{display:block;overflow:visible}
     },
     equilibre: {
       key: 'equilibre', label: 'Équilibré',
-      target: { etf: 60, actions: 15, immobilier: 20, cash: 5 },
+      target: { etf: 55, actions: 15, crypto: 10, immobilier: 20 },
       maxSinglePosition: 15,
       maxSectorExposure: 35,
       maxStockSleeve: 20,
+      maxCryptoSleeve: 15,
       volTolerance: 15,
       maxDrawdownTolerance: 35,
       hypotheses: { pess: 2.0, central: 5.5, opti: 8.5, vol: 12 },
@@ -1141,10 +1181,11 @@ svg{display:block;overflow:visible}
     },
     dynamique: {
       key: 'dynamique', label: 'Dynamique',
-      target: { etf: 55, actions: 30, immobilier: 12, cash: 3 },
+      target: { etf: 45, actions: 25, crypto: 20, immobilier: 10 },
       maxSinglePosition: 20,
       maxSectorExposure: 45,
       maxStockSleeve: 35,
+      maxCryptoSleeve: 30,
       volTolerance: 22,
       maxDrawdownTolerance: 50,
       hypotheses: { pess: 1.0, central: 7.0, opti: 11.0, vol: 17 },
@@ -1301,13 +1342,75 @@ svg{display:block;overflow:visible}
   /* Palette du thème sombre : teintes désaturées mais suffisamment lumineuses
      pour ressortir sur fond noir, et distinctes deux à deux. */
   const ASSET_COLORS = {
-    etf:'#4d8dd6', actions:'#9b86d9', immobilier:'#c9973f', cash:'#4bab9f', obligations:'#4bb87f'
+    etf:'#4d8dd6', actions:'#9b86d9', crypto:'#e0913a', immobilier:'#c9973f', cash:'#4bab9f', obligations:'#4bb87f'
   };
 
   const PALETTE = ['#4d8dd6','#9b86d9','#c9973f','#4bab9f','#4bb87f','#e2635e',
                    '#7ba7cf','#b08a6a','#8f7fc4','#5fc0b3','#d9b96a','#8d97a8'];
 
-  G.DATA = { PROFILES, ETF_CATALOG, STOCK_UNIVERSE, CONCLUSIONS, ASSET_COLORS, PALETTE, REF_DATE };
+  /* ------------------------------------------------------ Cryptoactifs
+     Table de correspondance ticker → identifiant CoinGecko. CoinGecko est
+     gratuit et sans clé : les cours crypto fonctionnent donc sans rien
+     configurer, comme les taux de change de la BCE.
+     `cap` = ordre de grandeur de capitalisation, utilisé seulement pour
+     distinguer les grandes capitalisations des jetons spéculatifs. */
+  const CRYPTO_CATALOG = [
+    { t:'BTC',  id:'bitcoin',      n:'Bitcoin',        cap:'large' },
+    { t:'ETH',  id:'ethereum',     n:'Ethereum',       cap:'large' },
+    { t:'USDT', id:'tether',       n:'Tether',         cap:'stable' },
+    { t:'USDC', id:'usd-coin',     n:'USD Coin',       cap:'stable' },
+    { t:'BNB',  id:'binancecoin',  n:'BNB',            cap:'large' },
+    { t:'SOL',  id:'solana',       n:'Solana',         cap:'large' },
+    { t:'XRP',  id:'ripple',       n:'XRP',            cap:'large' },
+    { t:'ADA',  id:'cardano',      n:'Cardano',        cap:'mid' },
+    { t:'DOGE', id:'dogecoin',     n:'Dogecoin',       cap:'mid' },
+    { t:'TRX',  id:'tron',         n:'TRON',           cap:'mid' },
+    { t:'AVAX', id:'avalanche-2',  n:'Avalanche',      cap:'mid' },
+    { t:'DOT',  id:'polkadot',     n:'Polkadot',       cap:'mid' },
+    { t:'LINK', id:'chainlink',    n:'Chainlink',      cap:'mid' },
+    { t:'MATIC',id:'matic-network',n:'Polygon',        cap:'mid' },
+    { t:'POL',  id:'polygon-ecosystem-token', n:'Polygon (POL)', cap:'mid' },
+    { t:'LTC',  id:'litecoin',     n:'Litecoin',       cap:'mid' },
+    { t:'TON',  id:'the-open-network', n:'Toncoin',    cap:'mid' },
+    { t:'SHIB', id:'shiba-inu',    n:'Shiba Inu',      cap:'small' },
+    { t:'ATOM', id:'cosmos',       n:'Cosmos',         cap:'mid' },
+    { t:'UNI',  id:'uniswap',      n:'Uniswap',        cap:'mid' },
+    { t:'XLM',  id:'stellar',      n:'Stellar',        cap:'mid' },
+    { t:'NEAR', id:'near',         n:'NEAR Protocol',  cap:'mid' },
+    { t:'APT',  id:'aptos',        n:'Aptos',          cap:'mid' },
+    { t:'SUI',  id:'sui',          n:'Sui',            cap:'mid' },
+    { t:'ARB',  id:'arbitrum',     n:'Arbitrum',       cap:'small' },
+    { t:'OP',   id:'optimism',     n:'Optimism',       cap:'small' },
+    { t:'FIL',  id:'filecoin',     n:'Filecoin',       cap:'small' },
+    { t:'ETC',  id:'ethereum-classic', n:'Ethereum Classic', cap:'mid' },
+    { t:'ALGO', id:'algorand',     n:'Algorand',       cap:'small' },
+    { t:'VET',  id:'vechain',      n:'VeChain',        cap:'small' },
+    { t:'ICP',  id:'internet-computer', n:'Internet Computer', cap:'small' },
+    { t:'HBAR', id:'hedera-hashgraph', n:'Hedera',     cap:'mid' },
+    { t:'INJ',  id:'injective-protocol', n:'Injective', cap:'small' },
+    { t:'IMX',  id:'immutable-x',  n:'Immutable',      cap:'small' },
+    { t:'GRT',  id:'the-graph',    n:'The Graph',      cap:'small' },
+    { t:'AAVE', id:'aave',         n:'Aave',           cap:'small' },
+    { t:'MKR',  id:'maker',        n:'Maker',          cap:'small' },
+    { t:'LDO',  id:'lido-dao',     n:'Lido DAO',       cap:'small' },
+    { t:'STX',  id:'blockstack',   n:'Stacks',         cap:'small' },
+    { t:'TIA',  id:'celestia',     n:'Celestia',       cap:'small' },
+    { t:'SEI',  id:'sei-network',  n:'Sei',            cap:'small' },
+    { t:'RNDR', id:'render-token', n:'Render',         cap:'small' },
+    { t:'PEPE', id:'pepe',         n:'Pepe',           cap:'small' },
+    { t:'CRV',  id:'curve-dao-token', n:'Curve DAO',   cap:'small' },
+    { t:'SAND', id:'the-sandbox',  n:'The Sandbox',    cap:'small' },
+    { t:'MANA', id:'decentraland', n:'Decentraland',   cap:'small' },
+    { t:'FTM',  id:'fantom',       n:'Fantom',         cap:'small' },
+    { t:'XTZ',  id:'tezos',        n:'Tezos',          cap:'small' },
+    { t:'EGLD', id:'elrond-erd-2', n:'MultiversX',     cap:'small' },
+    { t:'KAS',  id:'kaspa',        n:'Kaspa',          cap:'small' }
+  ];
+  const CRYPTO_BY_TICKER = {};
+  CRYPTO_CATALOG.forEach(c => CRYPTO_BY_TICKER[c.t] = c);
+
+  G.DATA = { PROFILES, ETF_CATALOG, STOCK_UNIVERSE, CONCLUSIONS, ASSET_COLORS, PALETTE, REF_DATE,
+             CRYPTO_CATALOG, CRYPTO_BY_TICKER };
 })(window);
 
 
@@ -1347,11 +1450,14 @@ svg{display:block;overflow:visible}
         horizonYears: 10,
         monthlyBudget: 150,
         availableCash: 0,
-        target: Object.assign({}, G.DATA.PROFILES.equilibre.target)
+        target: Object.assign({}, G.DATA.PROFILES.equilibre.target)   // etf/actions/crypto/immobilier
       },
       holdings: [],      // ETF + actions
       bricks: [],        // immobilier participatif
-      cashAccounts: [],  // livrets, compte espèces
+      /* Les liquidités ne comptent plus dans le patrimoine (elles vivent sur un
+         autre compte). Le tableau est conservé pour ne perdre aucune donnée
+         déjà saisie, mais il n'est ni affiché ni valorisé. */
+      cashAccounts: [],
       transactions: [],  // achats/ventes/dividendes/versements
       journal: [],       // journal des décisions
       watchlist: [],     // tickers suivis
@@ -1376,8 +1482,8 @@ svg{display:block;overflow:visible}
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) {
-        const parsed = JSON.parse(raw);
-        state = deepMerge(blankState(), parsed);
+        const parsed = migrateRaw(JSON.parse(raw));
+        state = migrate(deepMerge(blankState(), parsed));
       }
     } catch (e) { console.warn('Lecture du stockage impossible', e); }
     return state;
@@ -1387,7 +1493,7 @@ svg{display:block;overflow:visible}
     if (!(G.Api && G.Api.isServer)) return false;
     const remote = await G.Api.loadState();
     if (remote && typeof remote === 'object') {
-      state = deepMerge(blankState(), remote);
+      state = migrate(deepMerge(blankState(), migrateRaw(remote)));
       // les clés d'API n'existent pas côté client en mode serveur
       state.settings.keys = { twelvedata: '', finnhub: '', alphavantage: '', anthropic: '' };
       saveLocalCopy();
@@ -1397,7 +1503,7 @@ svg{display:block;overflow:visible}
   }
   /** Remplace l'état par celui fourni (après un rafraîchissement serveur). */
   function replaceState(obj) {
-    state = deepMerge(blankState(), obj);
+    state = migrate(deepMerge(blankState(), migrateRaw(obj)));
     saveLocalCopy();
     return state;
   }
@@ -1413,10 +1519,48 @@ svg{display:block;overflow:visible}
       G.Api.saveState(payload, !!immediate);
     }
   }
+  const CLASSES = ['etf', 'actions', 'crypto', 'immobilier'];
+  /** Ne garde que les quatre classes suivies, en nombres. */
+  function normaliseTarget(t) {
+    const out = {};
+    CLASSES.forEach(k => out[k] = Number((t || {})[k]) || 0);
+    return out;
+  }
+
+  /* Migration d'un état ENREGISTRÉ, appliquée sur l'objet brut AVANT la fusion
+     avec blankState() : après la fusion, la cible par défaut aurait déjà rempli
+     `crypto`, et l'ancien poids `cash` serait perdu en silence. */
+  function migrateRaw(raw) {
+    if (!raw || typeof raw !== 'object') return raw;
+    const t = raw.profile && typeof raw.profile === 'object' && raw.profile.target;
+    if (t && typeof t === 'object' && t.cash != null && t.crypto == null) {
+      // La poche liquidités disparaît du patrimoine : son poids cible devient
+      // celui de la nouvelle poche crypto, pour que la somme reste à 100.
+      t.crypto = Number(t.cash) || 0;
+    }
+    if (t && typeof t === 'object') delete t.cash;
+    (Array.isArray(raw.holdings) ? raw.holdings : []).forEach(h => {
+      // un type inconnu resterait invalorisable : on le ramène à 'etf'
+      if (h && h.type !== 'etf' && h.type !== 'action' && h.type !== 'crypto') h.type = 'etf';
+    });
+    return raw;
+  }
+  /** Après fusion : la cible ne doit contenir que les classes suivies. */
+  function migrate(st) {
+    st.profile = st.profile || {};
+    st.profile.target = normaliseTarget(st.profile.target);
+    return st;
+  }
+
   function deepMerge(base, over) {
     if (over === null || over === undefined) return base;
+    // `typeof null` vaut 'object' : sans ce garde-fou, un champ valant null dans
+    // l'état vierge (settings.lastRefresh, par exemple) faisait planter la fusion
+    // dès que l'état enregistré y mettait une chaîne — donc à chaque rechargement
+    // suivant un rafraîchissement des cours.
+    if (base === null || base === undefined) return over;
     if (Array.isArray(base)) return Array.isArray(over) ? over : base;
-    if (typeof base !== 'object') return over;
+    if (typeof base !== 'object' || typeof over !== 'object') return over;
     const out = Object.assign({}, base);
     Object.keys(over).forEach(k => {
       out[k] = (k in base) ? deepMerge(base[k], over[k]) : over[k];
@@ -1500,6 +1644,11 @@ svg{display:block;overflow:visible}
       e.id.toUpperCase() === q || (e.ticker || '').toUpperCase() === q || (e.isin || '').toUpperCase() === q);
   }
 
+  /** Fiche d'un cryptoactif du catalogue, à partir de son ticker. */
+  function cryptoMeta(ticker) {
+    return G.DATA.CRYPTO_BY_TICKER[String(ticker || '').toUpperCase().split('/')[0]] || null;
+  }
+
   /* --------------------------------------------------- valorisation positions */
   /** Prix retenu pour une ligne : dernier prix de marché si disponible,
    *  sinon prix de revient (et on le signale — jamais de prix inventé). */
@@ -1527,31 +1676,33 @@ svg{display:block;overflow:visible}
 
     const etfValue = holdings.filter(h => h.type === 'etf').reduce((s, h) => s + h._value, 0);
     const stockValue = holdings.filter(h => h.type === 'action').reduce((s, h) => s + h._value, 0);
+    const cryptoValue = holdings.filter(h => h.type === 'crypto').reduce((s, h) => s + h._value, 0);
     const bricksValue = state.bricks
       .filter(b => b.status !== 'remboursé' && b.status !== 'perdu')
       .reduce((s, b) => s + (Number(b.amount) || 0), 0);
-    const cashValue = state.cashAccounts.reduce((s, c) => s + (Number(c.amount) || 0), 0)
-      + (Number(state.profile.availableCash) || 0);
 
-    const invested = etfValue + stockValue + bricksValue;
-    const total = invested + cashValue;
+    /* Les liquidités ne font PAS partie du patrimoine suivi ici : elles vivent
+       sur un autre compte. `profile.availableCash` reste seulement un paramètre
+       de « Mon plan » — le capital que tu es prêt à déployer. */
+    const invested = etfValue + stockValue + cryptoValue + bricksValue;
+    const total = invested;
 
-    const cost = holdings.reduce((s, h) => s + h._cost, 0) + bricksValue;
-    const pl = (etfValue + stockValue) - holdings.reduce((s, h) => s + h._cost, 0);
-    const plPct = holdings.reduce((s, h) => s + h._cost, 0) > 0
-      ? (pl / holdings.reduce((s, h) => s + h._cost, 0)) * 100 : 0;
+    const marketCost = holdings.reduce((s, h) => s + h._cost, 0);
+    const cost = marketCost + bricksValue;
+    const pl = (etfValue + stockValue + cryptoValue) - marketCost;
+    const plPct = marketCost > 0 ? (pl / marketCost) * 100 : 0;
 
-    const alloc = { etf: 0, actions: 0, immobilier: 0, cash: 0 };
+    const alloc = { etf: 0, actions: 0, crypto: 0, immobilier: 0 };
     if (total > 0) {
       alloc.etf = etfValue / total * 100;
       alloc.actions = stockValue / total * 100;
+      alloc.crypto = cryptoValue / total * 100;
       alloc.immobilier = bricksValue / total * 100;
-      alloc.cash = cashValue / total * 100;
     }
 
     return {
-      holdings, etfValue, stockValue, bricksValue, cashValue, invested, total, cost, pl, plPct, alloc,
-      target: state.profile.target,
+      holdings, etfValue, stockValue, cryptoValue, bricksValue, invested, total, cost, pl, plPct, alloc,
+      target: normaliseTarget(state.profile.target),
       profile: G.DATA.PROFILES[state.profile.riskProfile] || G.DATA.PROFILES.equilibre
     };
   }
@@ -1604,7 +1755,7 @@ svg{display:block;overflow:visible}
   function importJSON(txt) {
     const parsed = JSON.parse(txt);
     const keys = state.settings.keys;                 // on garde les clés locales
-    state = deepMerge(blankState(), parsed);
+    state = migrate(deepMerge(blankState(), migrateRaw(parsed)));
     state.settings.keys = keys;
     save();
   }
@@ -1623,7 +1774,7 @@ svg{display:block;overflow:visible}
     addTransaction, removeTransaction,
     addJournal, updateJournal, removeJournal,
     addWatch, removeWatch,
-    etfCatalog, findCatalog,
+    etfCatalog, findCatalog, cryptoMeta, normaliseTarget, CLASSES,
     priceOf, valueOf, costOf, snapshot,
     investedInMonth, monthlySeries, incomeLast12m, currentYield,
     exportJSON, importJSON, wipe, blankState
@@ -1747,6 +1898,38 @@ svg{display:block;overflow:visible}
     };
   }
 
+  /* CoinGecko : gratuit, sans clé, et il cote les jetons que Twelve Data ignore.
+     La table d'identifiants vit dans data.js (CRYPTO_CATALOG). */
+  function cryptoOf(symbol) {
+    const [base, quote] = String(symbol || '').toUpperCase().split('/');
+    const meta = G.DATA.CRYPTO_BY_TICKER[base];
+    return meta ? { id: meta.id, base, quote: quote || 'EUR' } : null;
+  }
+  async function quoteCoinGecko(c) {
+    const vs = c.quote.toLowerCase();
+    const j = await throttled('coingecko', 2500, () => getJSON(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(c.id)}` +
+      `&vs_currencies=${encodeURIComponent(vs)}&include_24hr_change=true&include_last_updated_at=true`, 12000));
+    const row = j && j[c.id];
+    const price = num(row && row[vs]);
+    if (price == null) return null;
+    return {
+      price, currency: c.quote, changePct: num(row[vs + '_24h_change']),
+      name: c.base, source: 'CoinGecko',
+      asOf: row.last_updated_at ? G.Store.localISO(new Date(row.last_updated_at * 1000)) : G.Store.todayISO()
+    };
+  }
+  async function seriesCoinGecko(c) {
+    const j = await throttled('coingecko', 2500, () => getJSON(
+      `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(c.id)}/market_chart` +
+      `?vs_currency=${encodeURIComponent(c.quote.toLowerCase())}&days=365&interval=daily`, 20000));
+    if (!j || !Array.isArray(j.prices) || j.prices.length < 30) return null;
+    return {
+      closes: j.prices.map(([ms, v]) => ({ d: G.Store.localISO(new Date(ms)), c: num(v) })).filter(x => x.c != null),
+      src: 'CoinGecko'
+    };
+  }
+
   /** Cotation : essaie chaque fournisseur configuré, garde le premier succès. */
   async function quote(symbol, opts) {
     opts = opts || {};
@@ -1756,6 +1939,13 @@ svg{display:block;overflow:visible}
       try { return await G.Api.quote(k, opts); } catch (e) { return null; }
     }
     if (!opts.force && fresh(cache().quotes[k], TTL.quote)) return cache().quotes[k].v;
+    const c = cryptoOf(k);
+    if (c) {
+      try {
+        const v = await quoteCoinGecko(c);
+        if (v) { cache().quotes[k] = { ts: Date.now(), v }; G.Store.save(); return v; }
+      } catch (e) { /* on retombe sur les fournisseurs génériques */ }
+    }
     for (const fn of [quoteTwelve, quoteFinnhub, quoteAlpha]) {
       try {
         const v = await fn(symbol);
@@ -1784,7 +1974,15 @@ svg{display:block;overflow:visible}
     const key = keys().twelvedata;
     let closes = null, src = null, asOf = null;
 
-    if (key) {
+    const cg = cryptoOf(k);
+    if (cg) {
+      try {
+        const r = await seriesCoinGecko(cg);
+        if (r) { closes = r.closes; src = r.src; asOf = closes[closes.length - 1].d; }
+      } catch (e) { /* on tente les fournisseurs génériques */ }
+    }
+
+    if (!closes && key) {
       try {
         const j = await throttled('twelvedata', 8000, () =>
           getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}` +
@@ -1971,7 +2169,8 @@ svg{display:block;overflow:visible}
       if (fresh) G.Store.replaceState(fresh);
       return { total: (r && r.total) || 0, updated: (r && r.updated) || 0 };
     }
-    const list = st.holdings.filter(h => h.ticker);
+    // on n'interroge que ce qui est réellement cotable par un fournisseur actif
+    const list = st.holdings.filter(h => h.ticker && canQuote(h.ticker));
     let done = 0, ok = 0;
     for (const h of list) {
       const q = await quote(h.ticker, { force: true });
@@ -2019,6 +2218,9 @@ svg{display:block;overflow:visible}
     const k = keys();
     return !!(k.twelvedata || k.finnhub || k.alphavantage);
   }
+  /** Y a-t-il de quoi coter CE symbole ? CoinGecko ne demande aucune clé, donc
+   *  une position crypto est toujours actualisable. */
+  function canQuote(symbol) { return hasProvider() || !!cryptoOf(symbol); }
   function providerStatus() {
     if (viaServer() && G.Api.config && G.Api.config.providers) return G.Api.config.providers;
     const k = keys();
@@ -2050,9 +2252,355 @@ svg{display:block;overflow:visible}
   }
 
   G.Market = {
-    quote, series, fundamentals, fx, refreshHoldings,
+    quote, series, fundamentals, fx, refreshHoldings, canQuote, cryptoOf,
     hasProvider, providerStatus, testKeys, computeStats
   };
+})(window);
+
+
+/* ===== vision.js ===== */
+/* ============================================================================
+   vision.js — Import de positions depuis des captures d'écran.
+
+   Tu envoies une ou plusieurs photos (Binance, Bitstack, Crypto.com, ton
+   courtier…), Claude en extrait des positions structurées, et l'application
+   te les présente dans un tableau **que tu valides ligne par ligne** avant que
+   quoi que ce soit ne soit créé.
+
+   RÈGLE 1 — jamais de donnée inventée : rien n'est enregistré automatiquement.
+   Une lecture reste une lecture, pas une source de vérité. Chaque ligne porte
+   le niveau de confiance de l'extraction et ce qui a été lu littéralement.
+   ========================================================================== */
+(function (G) {
+  'use strict';
+
+  const MAX_IMAGES = 8;
+  const MAX_SIDE = 1600;          // redimensionnement avant envoi
+  const ALLOWED = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+
+  let pending = [];               // positions extraites, en attente de validation
+  let files = [];                 // images choisies
+
+  /* ------------------------------------------------------------ disponible ? */
+  function enabled() {
+    if (G.Api && G.Api.isServer) return !!(G.Api.config && G.Api.config.visionEnabled);
+    return !!(G.Store.state.settings.keys.anthropic || '').trim();
+  }
+
+  /* ------------------------------------------------- préparation des images
+     Les captures de téléphone font souvent 3–4 Mo : on les réduit côté
+     navigateur pour rester rapide et sous les limites de l'API.            */
+  function toBase64(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, MAX_SIDE / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        cv.getContext('2d').drawImage(img, 0, 0, w, h);
+        // JPEG : une capture d'écran compresse bien et le texte reste lisible
+        const dataUrl = cv.toDataURL('image/jpeg', 0.85);
+        resolve({ mediaType: 'image/jpeg', data: dataUrl.split(',')[1], w, h });
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image illisible : ' + file.name)); };
+      img.src = url;
+    });
+  }
+
+  /* ------------------------------------------------------------- extraction */
+  async function extract(images) {
+    const raw = (G.Api && G.Api.isServer)
+      ? await viaServer(images)
+      : await viaBrowser(images);
+    return parse(raw);
+  }
+
+  async function viaServer(images) {
+    const r = await fetch('/api/vision', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ images })
+    });
+    const j = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((j && j.error) || ('HTTP ' + r.status));
+    return j.text;
+  }
+
+  /** Mode hors ligne : la clé est celle saisie dans Réglages, elle ne quitte
+   *  ce navigateur que pour appeler Anthropic. */
+  async function viaBrowser(images) {
+    const key = (G.Store.state.settings.keys.anthropic || '').trim();
+    if (!key) throw new Error('Ajoute ta clé Anthropic dans Réglages pour lire des photos.');
+    const content = images.map(im => ({
+      type: 'image', source: { type: 'base64', media_type: im.mediaType, data: im.data }
+    }));
+    content.push({ type: 'text', text: PROMPT });
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-5', max_tokens: 4000,
+        system: SYSTEM, messages: [{ role: 'user', content }]
+      })
+    });
+    if (!r.ok) throw new Error('API Anthropic ' + r.status);
+    const j = await r.json();
+    return (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+  }
+
+  /** Le modèle peut encadrer sa réponse d'un bloc de code : on récupère
+   *  l'objet JSON quoi qu'il arrive, sans jamais faire confiance au format. */
+  function parse(text) {
+    if (!text) throw new Error('réponse vide');
+    let s = String(text).trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+    const a = s.indexOf('{'), b = s.lastIndexOf('}');
+    if (a < 0 || b < a) throw new Error('réponse illisible');
+    const o = JSON.parse(s.slice(a, b + 1));
+    return {
+      positions: Array.isArray(o.positions) ? o.positions.map(clean).filter(Boolean) : [],
+      warnings: Array.isArray(o.warnings) ? o.warnings.map(String) : [],
+      detected: o.detected || null
+    };
+  }
+
+  const numOrNull = v => {
+    if (v === null || v === undefined || v === '') return null;
+    const n = Number(String(v).replace(/\s/g, '').replace(',', '.'));
+    return isFinite(n) ? n : null;
+  };
+
+  /** Normalise une ligne extraite. Ce qui est douteux reste nul — l'écran de
+   *  validation le montre en rouge plutôt que de le combler. */
+  function clean(p) {
+    if (!p || typeof p !== 'object') return null;
+    const ticker = String(p.ticker || '').trim().toUpperCase().slice(0, 20);
+    const name = String(p.name || '').trim().slice(0, 80);
+    if (!ticker && !name) return null;
+    let type = String(p.type || '').toLowerCase();
+    if (!['crypto', 'etf', 'action'].includes(type)) {
+      type = G.Store.cryptoMeta(ticker) ? 'crypto' : 'etf';
+    }
+    // un ticker connu du catalogue crypto tranche le doute
+    if (type !== 'crypto' && G.Store.cryptoMeta(ticker)) type = 'crypto';
+    return {
+      _id: Math.random().toString(36).slice(2, 9),
+      _keep: true,
+      type, ticker, name: name || (G.Store.cryptoMeta(ticker) || {}).n || '',
+      quantity: numOrNull(p.quantity),
+      avgPrice: numOrNull(p.avgPrice),
+      currency: /^[A-Z]{3}$/.test(String(p.currency || '').toUpperCase())
+        ? String(p.currency).toUpperCase() : 'EUR',
+      account: String(p.account || '').trim().slice(0, 30) || 'Autre',
+      confidence: ['haute', 'moyenne', 'basse'].includes(p.confidence) ? p.confidence : 'moyenne',
+      source: String(p.source || '').slice(0, 120)
+    };
+  }
+
+  const SYSTEM = [
+    "Tu extrais des positions financières depuis des captures d'écran de portefeuilles.",
+    'Tu réponds UNIQUEMENT avec un objet JSON valide, sans texte autour.',
+    'Schéma : {"positions":[{"type":"crypto|etf|action","ticker":"BTC","name":"Bitcoin","quantity":0.0345,"avgPrice":41200.5,"currency":"EUR","account":"Binance","confidence":"haute|moyenne|basse","source":"ce que tu as lu"}],"warnings":["…"],"detected":"plateforme ou null"}',
+    "N'invente JAMAIS une valeur : un champ illisible vaut null.",
+    'Ne convertis rien. `quantity` est la quantité détenue, pas une valeur en euros.',
+    "`avgPrice` est le prix de revient unitaire ; si l'écran ne montre que le cours actuel, laisse null et signale-le.",
+    'Format français : « 1 234,56 » vaut 1234.56. Ignore les totaux et les lignes de gains/pertes.'
+  ].join('\n');
+  const PROMPT = 'Extrais toutes les positions visibles sur ces captures. Réponds uniquement avec le JSON du schéma.';
+
+  /* ================================================================= ÉCRAN */
+  const esc = s => G.UI.esc(s);
+
+  function openImport() {
+    if (!enabled()) {
+      G.UI.toast("La lecture de photo demande une clé Anthropic. Ajoute-la dans Réglages.", 'err');
+      G.UI.go('settings');
+      return;
+    }
+    files = []; pending = [];
+    G.UI.openModal('Importer depuis une photo', pickerHTML(), null, null, { wide: true, noSave: true });
+    wirePicker();
+  }
+
+  function pickerHTML() {
+    return `
+      <p class="note">Envoie des captures d'écran de tes comptes — Binance, Bitstack,
+      Crypto.com, ton courtier… Jusqu'à ${MAX_IMAGES} images à la fois.
+      <b>Rien ne sera créé sans ta validation</b> : tu verras d'abord ce qui a été lu.</p>
+      <div id="vDrop" class="v-drop">
+        <input type="file" id="vFiles" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
+        <div class="v-drop-in">
+          <div class="v-drop-icon">⤢</div>
+          <div>Dépose tes images ici, ou <button class="btn sm" id="vPick" type="button">choisis des fichiers</button></div>
+          <div class="muted sm">PNG, JPEG, WebP · les images sont réduites avant envoi</div>
+        </div>
+      </div>
+      <div id="vThumbs" class="v-thumbs"></div>
+      <div id="vStatus" class="v-status"></div>
+      <div class="row-actions" style="margin-top:14px;justify-content:flex-end">
+        <button class="btn primary" id="vGo" type="button" disabled>Lire les images</button>
+      </div>`;
+  }
+
+  function wirePicker() {
+    const drop = document.querySelector('#vDrop');
+    const input = document.querySelector('#vFiles');
+    document.querySelector('#vPick').addEventListener('click', () => input.click());
+    input.addEventListener('change', () => addFiles(input.files));
+    ['dragenter', 'dragover'].forEach(e => drop.addEventListener(e, ev => {
+      ev.preventDefault(); drop.classList.add('over');
+    }));
+    ['dragleave', 'drop'].forEach(e => drop.addEventListener(e, ev => {
+      ev.preventDefault(); drop.classList.remove('over');
+    }));
+    drop.addEventListener('drop', ev => addFiles(ev.dataTransfer.files));
+    document.querySelector('#vGo').addEventListener('click', run);
+  }
+
+  function addFiles(list) {
+    for (const f of Array.from(list || [])) {
+      if (!ALLOWED.includes(f.type)) continue;
+      if (files.length >= MAX_IMAGES) break;
+      files.push(f);
+    }
+    renderThumbs();
+  }
+
+  function renderThumbs() {
+    const box = document.querySelector('#vThumbs');
+    if (!box) return;
+    box.innerHTML = files.map((f, i) =>
+      `<div class="v-thumb"><img src="${URL.createObjectURL(f)}" alt="">
+        <button class="v-thumb-x" data-i="${i}" type="button" title="Retirer">✕</button>
+        <span>${esc(f.name.slice(0, 22))}</span></div>`).join('');
+    box.querySelectorAll('.v-thumb-x').forEach(b => b.addEventListener('click', () => {
+      files.splice(Number(b.dataset.i), 1); renderThumbs();
+    }));
+    const go = document.querySelector('#vGo');
+    if (go) go.disabled = files.length === 0;
+  }
+
+  async function run() {
+    const status = document.querySelector('#vStatus');
+    const go = document.querySelector('#vGo');
+    go.disabled = true;
+    try {
+      status.innerHTML = `<span class="muted">Préparation des images…</span>`;
+      const images = [];
+      for (const f of files) images.push(await toBase64(f));
+      status.innerHTML = `<span class="muted">Lecture par InvestAI — ${images.length} image(s)…</span>`;
+      const res = await extract(images);
+      pending = res.positions;
+      if (!pending.length) {
+        status.innerHTML = `<div class="v-err">Aucune position lisible sur ces images.
+          ${res.warnings.map(w => `<div>${esc(w)}</div>`).join('')}</div>`;
+        go.disabled = false;
+        return;
+      }
+      showReview(res);
+    } catch (e) {
+      status.innerHTML = `<div class="v-err">${esc(e.message)}</div>`;
+      go.disabled = false;
+    }
+  }
+
+  /* ------------------------------------------------------------ validation */
+  function showReview(res) {
+    const body = `
+      <p class="note">${res.detected ? `Plateforme reconnue : <b>${esc(res.detected)}</b>. ` : ''}
+      <b>${pending.length}</b> position(s) lue(s). Vérifie chaque ligne : une lecture d'image
+      n'est pas une source de vérité. Décoche ce que tu ne veux pas, corrige ce qui est faux.</p>
+      ${res.warnings.length ? `<div class="v-warn">${res.warnings.map(w => `<div>⚠ ${esc(w)}</div>`).join('')}</div>` : ''}
+      <div class="table-wrap"><table class="tbl v-review"><thead><tr>
+        <th></th><th>Type</th><th>Ticker</th><th>Nom</th>
+        <th class="num">Quantité</th><th class="num">PRU</th><th>Devise</th><th>Compte</th><th>Lecture</th>
+      </tr></thead><tbody>${pending.map(rowHTML).join('')}</tbody></table></div>
+      <p class="note" style="margin-top:12px">Les cases vides n'ont pas pu être lues — remplis-les
+      toi-même plutôt que de laisser l'application deviner. Sans prix de revient, la position sera
+      créée mais sa plus-value restera à zéro tant que tu ne l'auras pas saisi.</p>
+      <div class="row-actions" style="margin-top:14px;justify-content:flex-end">
+        <button class="btn" id="vBack" type="button">← Autres images</button>
+        <button class="btn primary" id="vConfirm" type="button">Créer les positions cochées</button>
+      </div>`;
+    G.UI.setModalBody('Vérifie avant de créer', body);
+    wireReview();
+  }
+
+  function rowHTML(p) {
+    const miss = v => v === null ? ' class="v-miss"' : '';
+    const cf = { haute: 'ok', moyenne: 'mid', basse: 'low' }[p.confidence];
+    return `<tr data-id="${p._id}">
+      <td><input type="checkbox" class="v-keep" ${p._keep ? 'checked' : ''}></td>
+      <td><select class="input sm v-f" data-f="type">
+        ${[['crypto', 'Crypto'], ['etf', 'ETF'], ['action', 'Action']].map(([v, l]) =>
+          `<option value="${v}"${p.type === v ? ' selected' : ''}>${l}</option>`).join('')}
+      </select></td>
+      <td><input class="input sm v-f" data-f="ticker" value="${esc(p.ticker)}"></td>
+      <td><input class="input sm v-f" data-f="name" value="${esc(p.name)}"></td>
+      <td${miss(p.quantity)}><input class="input sm v-f num" data-f="quantity" type="number" step="any" value="${p.quantity ?? ''}"></td>
+      <td${miss(p.avgPrice)}><input class="input sm v-f num" data-f="avgPrice" type="number" step="any" value="${p.avgPrice ?? ''}"></td>
+      <td><input class="input sm v-f" data-f="currency" value="${esc(p.currency)}" size="4"></td>
+      <td><input class="input sm v-f" data-f="account" value="${esc(p.account)}"></td>
+      <td><span class="v-cf v-cf-${cf}" title="${esc(p.source)}">${p.confidence}</span></td>
+    </tr>`;
+  }
+
+  function wireReview() {
+    document.querySelector('#vBack').addEventListener('click', () => {
+      G.UI.setModalBody('Importer depuis une photo', pickerHTML());
+      wirePicker(); renderThumbs();
+    });
+    document.querySelectorAll('.v-review tr[data-id]').forEach(tr => {
+      const p = pending.find(x => x._id === tr.dataset.id);
+      tr.querySelector('.v-keep').addEventListener('change', e => p._keep = e.target.checked);
+      tr.querySelectorAll('.v-f').forEach(inp => inp.addEventListener('input', e => {
+        const f = e.target.dataset.f;
+        p[f] = (f === 'quantity' || f === 'avgPrice')
+          ? (e.target.value === '' ? null : Number(e.target.value))
+          : e.target.value;
+      }));
+    });
+    document.querySelector('#vConfirm').addEventListener('click', confirmImport);
+  }
+
+  function confirmImport() {
+    const keep = pending.filter(p => p._keep && (p.ticker || p.name));
+    if (!keep.length) { G.UI.toast('Aucune ligne cochée.', 'err'); return; }
+    const sansQte = keep.filter(p => !p.quantity).length;
+    if (sansQte && !confirm(
+      `${sansQte} position(s) n'ont pas de quantité : elles seront créées à 0 et ne compteront pas ` +
+      `dans ton patrimoine tant que tu ne l'auras pas saisie.\n\nContinuer ?`)) return;
+
+    let n = 0;
+    keep.forEach(p => {
+      G.Store.addHolding({
+        type: p.type,
+        ticker: String(p.ticker || '').toUpperCase(),
+        name: p.name || '',
+        quantity: Number(p.quantity) || 0,
+        avgPrice: Number(p.avgPrice) || 0,
+        currency: p.currency || 'EUR',
+        account: p.account || 'Autre',
+        importedFrom: 'photo',
+        importedAt: G.Store.todayISO()
+      });
+      n++;
+    });
+    G.Store.save(true);
+    G.UI.closeModal();
+    G.UI.toast(`${n} position(s) créée(s). Vérifie les prix de revient, puis lance « Actualiser ».`, 'ok');
+    G.UI.renderPortfolio(); G.UI.renderDashboard();
+  }
+
+  G.Vision = { openImport, enabled, parse, clean, extract };
 })(window);
 
 
@@ -2153,8 +2701,7 @@ svg{display:block;overflow:visible}
       add(assetClass, 'Immobilier participatif', v);
       covered += v;
     });
-    // liquidités
-    if (snap.cashValue > 0) { add(assetClass, 'Liquidités', snap.cashValue); }
+    // les liquidités ne font pas partie du patrimoine suivi (autre compte)
 
     const pct = bag => {
       const tot = Object.values(bag).reduce((s, x) => s + x, 0);
@@ -2244,14 +2791,20 @@ svg{display:block;overflow:visible}
       if (s && s.v && has(s.v.volAnn)) { volSum += s.v.volAnn * h._value; volW += h._value; volKnown += h._value; }
     });
     // hypothèses de repli explicites si l'historique manque
-    const fallbackVol = { etf: 14, actions: 26, immobilier: 8, cash: 0 };
+    /* Hypothèses de repli, affichées comme telles. La crypto est de très loin
+       la classe la plus volatile : la traiter comme une action sous-estimerait
+       gravement le risque du portefeuille. */
+    const fallbackVol = { etf: 14, actions: 26, crypto: 70, immobilier: 8 };
     let assumedVol = 0;
     snap.holdings.forEach(h => {
       const s = st.cache.series[(h.ticker || '').toUpperCase()];
-      if (!(s && s.v && has(s.v.volAnn))) { assumedVol += fallbackVol[h.type === 'etf' ? 'etf' : 'actions'] * h._value; volW += h._value; }
+      if (!(s && s.v && has(s.v.volAnn))) {
+        assumedVol += (fallbackVol[h.type] || fallbackVol.actions) * h._value;
+        volW += h._value;
+      }
     });
-    volW += snap.bricksValue + snap.cashValue;
-    assumedVol += fallbackVol.immobilier * snap.bricksValue + fallbackVol.cash * snap.cashValue;
+    volW += snap.bricksValue;
+    assumedVol += fallbackVol.immobilier * snap.bricksValue;
     const portVol = volW ? (volSum + assumedVol) / volW : null;
     const volMeasured = volW ? volKnown / volW * 100 : 0;
 
@@ -2265,7 +2818,7 @@ svg{display:block;overflow:visible}
       : effectiveLines >= 25 ? 'Faible' : effectiveLines >= 8 ? 'Modérée' : 'Élevée';
 
     // --- écarts à l'allocation cible
-    const drift = ['etf', 'actions', 'immobilier', 'cash'].map(k => ({
+    const drift = ['etf', 'actions', 'crypto', 'immobilier'].map(k => ({
       key: k, actual: snap.alloc[k] || 0, target: snap.target[k] || 0,
       gap: (snap.alloc[k] || 0) - (snap.target[k] || 0)
     }));
@@ -2293,7 +2846,7 @@ svg{display:block;overflow:visible}
         'Un ETF Europe ou émergents réduirait cette dépendance géographique.');
     }
     drift.forEach(d => {
-      const lbl = { etf: 'ETF', actions: 'Actions', immobilier: 'Immobilier', cash: 'Liquidités' }[d.key];
+      const lbl = { etf: 'ETF', actions: 'Actions', crypto: 'Crypto', immobilier: 'Immobilier' }[d.key];
       if (Math.abs(d.gap) >= 10) push(2, `Écart d'allocation : ${lbl}`,
         `${d.actual.toFixed(1)} % réel contre ${d.target} % visé (écart de ${d.gap > 0 ? '+' : ''}${d.gap.toFixed(1)} points).`,
         d.gap > 0 ? `Redirige tes prochains versements hors ${lbl.toLowerCase()}.` : `Concentre tes prochains versements sur ${lbl.toLowerCase()}.`);
@@ -2304,9 +2857,15 @@ svg{display:block;overflow:visible}
     if (effectiveLines < 12 && riskyTotal > 0) push(2, 'Trop peu d\'expositions effectives',
       `Une fois les ETF décomposés, le portefeuille se comporte comme s'il ne contenait que ${effectiveLines.toFixed(0)} exposition(s) équivalente(s).`,
       'Un ETF monde large apporte immédiatement plusieurs dizaines d\'expositions effectives.');
-    if (snap.alloc.cash > 35) push(2, 'Liquidités importantes',
-      `${snap.alloc.cash.toFixed(1)} % du patrimoine dort en liquidités.`,
-      'Sur un horizon de ' + st.profile.horizonYears + ' ans, un déploiement progressif et régulier limite le risque de mal choisir son moment.');
+    const maxCrypto = snap.profile.maxCryptoSleeve || 15;
+    if (snap.alloc.crypto > maxCrypto) push(2, 'Poche crypto au-dessus de ta tolérance',
+      `${snap.alloc.crypto.toFixed(1)} % du patrimoine est en cryptoactifs, pour un maximum de ${maxCrypto} % sur un profil ${snap.profile.label.toLowerCase()}.`,
+      'La crypto ne verse aucun revenu et sa volatilité dépasse largement celle des actions. Réorienter les prochains versements suffit à faire redescendre le poids sans vendre.');
+    const stables = snap.holdings.filter(h => h.type === 'crypto' && (G.Store.cryptoMeta(h.ticker) || {}).cap === 'stable');
+    const stablesVal = stables.reduce((a, h) => a + h._value, 0);
+    if (snap.cryptoValue > 0 && stablesVal / snap.cryptoValue > 0.5) push(1, 'Poche crypto surtout en stablecoins',
+      `${(stablesVal / snap.cryptoValue * 100).toFixed(0)} % de ta poche crypto est en stablecoins.`,
+      'Un stablecoin ne progresse pas : c\'est de la trésorerie exposée au risque de l\'émetteur et de la plateforme, pas un investissement.');
     if (exp.coverage < 70 && riskyTotal > 0) push(1, 'Données de composition incomplètes',
       `Seulement ${exp.coverage.toFixed(0)} % du portefeuille a une composition connue.`,
       'Renseigne le secteur/la région de tes actions et rattache tes ETF au catalogue pour fiabiliser l\'analyse.');
@@ -2747,11 +3306,11 @@ svg{display:block;overflow:visible}
     const snap = G.Store.snapshot();
     const st = G.Store.state;
     const monthly = Number(st.profile.monthlyBudget) || 0;
-    const rows = ['etf', 'actions', 'immobilier', 'cash'].map(k => {
+    const rows = ['etf', 'actions', 'crypto', 'immobilier'].map(k => {
       const actual = snap.alloc[k] || 0, target = snap.target[k] || 0;
       const gap = actual - target;
       const euroGap = snap.total * (gap / 100);
-      return { key: k, label: { etf:'ETF', actions:'Actions', immobilier:'Immobilier', cash:'Liquidités' }[k],
+      return { key: k, label: { etf:'ETF', actions:'Actions', crypto:'Crypto', immobilier:'Immobilier' }[k],
                actual, target, gap, euroGap };
     });
     const maxGap = Math.max(...rows.map(r => Math.abs(r.gap)));
@@ -2771,7 +3330,7 @@ svg{display:block;overflow:visible}
     if (totalDeficit > 0) {
       deficits.forEach(r => weights[r.key] = Math.abs(r.euroGap) / totalDeficit);
     } else {
-      rows.filter(r => r.key !== 'cash').forEach(r => weights[r.key] = (snap.target[r.key] || 0) / 100);
+      rows.forEach(r => weights[r.key] = (snap.target[r.key] || 0) / 100);
       const s = Object.values(weights).reduce((a, b) => a + b, 0) || 1;
       Object.keys(weights).forEach(k => weights[k] /= s);
     }
@@ -2781,7 +3340,7 @@ svg{display:block;overflow:visible}
       .sort((a, b) => b.amount - a.amount);
 
     // vente seulement si dépassement vraiment marqué
-    const sellCandidates = rows.filter(r => r.gap > 15 && r.key !== 'cash')
+    const sellCandidates = rows.filter(r => r.gap > 15)
       .map(r => ({ label: r.label, excess: r.euroGap,
         note: `${r.label} dépasse la cible de ${r.gap.toFixed(1)} points (${fmtE(r.euroGap)}). Une vente partielle est envisageable, mais compare d'abord au coût fiscal et aux frais : rediriger les versements est souvent suffisant.` }));
 
@@ -2805,10 +3364,10 @@ svg{display:block;overflow:visible}
 
     /* Répartition par classe : on vise la cible en tenant compte de l'existant.
        Le déploiement corrige d'abord les poches en déficit.                   */
-    const classes = ['etf', 'actions', 'immobilier'];
+    const classes = ['etf', 'actions', 'crypto', 'immobilier'];
     const deficits = classes.map(k => {
       const targetEuro = (snap.total + capital) * (snap.target[k] || 0) / 100;
-      const currentEuro = { etf: snap.etfValue, actions: snap.stockValue, immobilier: snap.bricksValue }[k];
+      const currentEuro = { etf: snap.etfValue, actions: snap.stockValue, crypto: snap.cryptoValue, immobilier: snap.bricksValue }[k];
       return { key: k, deficit: Math.max(0, targetEuro - currentEuro) };
     });
     const totalDef = deficits.reduce((s, d) => s + d.deficit, 0);
@@ -2877,6 +3436,27 @@ svg{display:block;overflow:visible}
           lines.push({ amount, label: 'Actions en direct — à sélectionner', kind: 'stock',
             why: 'Montant réservé à la poche actions. Utilise « Meilleures opportunités » pour choisir sur données réelles : je ne propose pas de titre sans avoir analysé ses fondamentaux du moment.' });
         }
+      } else if (classKey === 'crypto') {
+        const sleeve = snap.alloc.crypto || 0;
+        const maxSleeve = prof.maxCryptoSleeve || 15;
+        if (sleeve >= maxSleeve) {
+          lines.push({ amount, label: 'Poche crypto déjà au plafond → reportée sur les ETF', kind: 'note',
+            why: `Ta poche crypto atteint ${sleeve.toFixed(1)} %, au plafond de ${maxSleeve} % de ton profil. Je préfère ne pas l'alimenter.` });
+        } else {
+          // Règle 3 : aucune prédiction, aucun jeton nommé « qui va monter ».
+          const detenus = snap.holdings.filter(h => h.type === 'crypto');
+          const grosses = detenus.filter(h => (G.Store.cryptoMeta(h.ticker) || {}).cap === 'large');
+          lines.push({
+            amount, label: 'Cryptoactifs — à répartir toi-même', kind: 'crypto',
+            why: 'Montant réservé à ta poche crypto. Je ne désigne aucun jeton : ' +
+                 'aucun cryptoactif n\'a de flux financier permettant de le valoriser, ' +
+                 'donc aucun score comparable à celui d\'un ETF ou d\'une action ne serait honnête. ' +
+                 (grosses.length
+                   ? `Tu détiens déjà ${grosses.map(h => h.ticker).join(', ')} : renforcer l'existant évite d'ajouter des lignes que tu ne suivras pas.`
+                   : 'Sur cette poche, les grandes capitalisations sont les seules dont l\'historique de prix est assez long pour mesurer un risque.') +
+                 ' Rappel : volatilité très élevée, aucun revenu, perte totale possible.'
+          });
+        }
       } else if (classKey === 'immobilier') {
         const b = rankBricks().ranked.filter(x => x.brick.status === 'candidat')[0];
         lines.push({
@@ -2911,7 +3491,7 @@ svg{display:block;overflow:visible}
     const notes = [];
     if (nowC.dropped.length) notes.push(`Les montants inférieurs à ${MIN_ORDER} € ont été regroupés : passer un ordre trop petit fait exploser le poids des frais fixes.`);
     if (capital <= 0 && monthly <= 0) notes.push('Aucun montant saisi : renseigne un capital disponible ou un versement mensuel.');
-    if (snap.alloc.cash > 40) notes.push(`Tu détiens ${snap.alloc.cash.toFixed(0)} % en liquidités. Plutôt que tout déployer d'un coup, un étalement sur 3 à 6 mois réduit le risque de mal choisir son point d'entrée.`);
+    if (capital > 0 && capital > monthly * 6) notes.push(`Tu déploies ${fmtE(capital)} d'un coup. Un étalement sur 3 à 6 mois réduit le risque de mal choisir ton point d'entrée.`);
 
     return { capital, monthly, horizon, prof, thisMonth, recurring, analysis, proj, confidence: conf, notes, snap, bestEtfs };
   }
@@ -3377,8 +3957,8 @@ svg{display:block;overflow:visible}
 
     let o = header(`Où placer ${eur(amount)} ?`);
     o += `J'ai d'abord regardé ce que tu détiens : **${eur(s.total)}** au total, ` +
-      `réparti en ${pctA(s.alloc.etf)} ETF · ${pctA(s.alloc.actions)} actions · ${pctA(s.alloc.immobilier)} immobilier · ${pctA(s.alloc.cash)} liquidités. ` +
-      `Ta cible est ${s.target.etf}/${s.target.actions}/${s.target.immobilier}/${s.target.cash}.\n\n`;
+      `réparti en ${pctA(s.alloc.etf)} ETF · ${pctA(s.alloc.actions)} actions · ${pctA(s.alloc.crypto)} crypto · ${pctA(s.alloc.immobilier)} immobilier. ` +
+      `Ta cible est ${s.target.etf}/${s.target.actions}/${s.target.crypto}/${s.target.immobilier}.\n\n`;
 
     if (!plan.thisMonth.length) {
       o += `Je n'ai pas de répartition à proposer : aucun support n'est exploitable avec les données dont je dispose.\n`;
@@ -3707,10 +4287,11 @@ svg{display:block;overflow:visible}
       }
     }
     const a = E().analysePortfolio();
-    if (a.snap.alloc.cash > 30) {
-      o += `**Dans ta situation** : tu as ${pctA(a.snap.alloc.cash)} de liquidités. Plutôt que d'attendre un signal qui ne viendra pas, j'étalerais ce capital sur **3 à 6 versements mensuels**. Tu gardes une part du bénéfice d'être investi tôt, tout en limitant le regret si le marché baisse juste après.\n`;
+    const dispo = Number(G.Store.state.profile.availableCash) || 0;
+    if (dispo > 0 && dispo > (Number(G.Store.state.profile.monthlyBudget) || 0) * 6) {
+      o += `**Dans ta situation** : tu as ${eur(dispo)} de capital disponible. Plutôt que d'attendre un signal qui ne viendra pas, j'étalerais ce capital sur **3 à 6 versements mensuels**. Tu gardes une part du bénéfice d'être investi tôt, tout en limitant le regret si le marché baisse juste après.\n`;
     } else {
-      o += `**Dans ta situation** : ta trésorerie est déjà largement investie (${pctA(a.snap.alloc.cash)} de liquidités). La question du moment se pose surtout pour tes versements à venir — et pour eux, la régularité fait le travail.\n`;
+      o += `**Dans ta situation** : ton capital est déjà largement investi. La question du moment se pose surtout pour tes versements à venir — et pour eux, la régularité fait le travail.\n`;
     }
     return o;
   }
@@ -3877,7 +4458,7 @@ svg{display:block;overflow:visible}
   /* ----------------------------------------------------------------- Aide */
   function respHelp() {
     const snap = G.Store.snapshot();
-    let o = `Bonjour. Je suis **InvestAI**, ton analyste. Je connais ton portefeuille — ${eur(snap.total)} répartis en ${pctA(snap.alloc.etf)} ETF, ${pctA(snap.alloc.actions)} actions, ${pctA(snap.alloc.immobilier)} immobilier et ${pctA(snap.alloc.cash)} liquidités — et je le regarde **avant** de te proposer quoi que ce soit.\n\n`;
+    let o = `Bonjour. Je suis **InvestAI**, ton analyste. Je connais ton portefeuille — ${eur(snap.total)} répartis en ${pctA(snap.alloc.etf)} ETF, ${pctA(snap.alloc.actions)} actions, ${pctA(snap.alloc.crypto)} crypto et ${pctA(snap.alloc.immobilier)} immobilier — et je le regarde **avant** de te proposer quoi que ce soit.\n\n`;
     o += `Tu peux me demander par exemple :\n\n`;
     o += `- « J'ai 300 € à investir ce mois-ci. »\n- « Trouve-moi les meilleurs ETF pour mon profil. »\n- « Est-ce qu'Apple est trop chère ? »\n- « Compare Apple, Microsoft et Nvidia. »\n- « Est-ce que je suis suffisamment diversifié ? »\n- « Quel serait le meilleur plan si j'investis 150 € tous les mois pendant 10 ans ? »\n- « Compare ETF et Bricks pour mon portefeuille. »\n- « Dois-je acheter maintenant ou attendre ? »\n\n`;
     o += `<span class="muted sm">Je ne te dirai jamais qu'un actif va monter, et je te dirai quand je n'ai pas assez de données pour conclure.</span>`;
@@ -3938,7 +4519,7 @@ svg{display:block;overflow:visible}
       },
       patrimoine: {
         total_eur: Math.round(s.total), etf_eur: Math.round(s.etfValue), actions_eur: Math.round(s.stockValue),
-        immobilier_eur: Math.round(s.bricksValue), liquidites_eur: Math.round(s.cashValue),
+        crypto_eur: Math.round(s.cryptoValue), immobilier_eur: Math.round(s.bricksValue),
         plus_value_eur: Math.round(s.pl), plus_value_pct: +s.plPct.toFixed(2),
         allocation_reelle_pct: Object.fromEntries(Object.entries(s.alloc).map(([k, v]) => [k, +v.toFixed(1)])),
         investi_ce_mois_eur: G.Store.investedInMonth(),
@@ -4068,7 +4649,7 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
       return `Bonjour. Ton portefeuille est encore vide. Commence par saisir tes positions réelles dans <b>Portefeuille</b> — je ne peux rien analyser d'utile sans savoir ce que tu détiens.`;
     }
     const bits = [];
-    const LBL = { etf:'ta poche ETF', actions:'ta poche actions', immobilier:'ton immobilier', cash:'ta trésorerie' };
+    const LBL = { etf:'ta poche ETF', actions:'ta poche actions', crypto:'ta poche crypto', immobilier:'ton immobilier' };
     const maxDrift = a.drift.reduce((m, d) => Math.abs(d.gap) > Math.abs(m.gap) ? d : m, a.drift[0]);
 
     // 1) où en est l'allocation
@@ -4326,15 +4907,30 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
 
   /* ================================================================= MODALE */
   let modalOnSave = null;
-  function openModal(title, bodyHTML, footHTML, onSave) {
+  /** opts.wide : modale large (tableaux). opts.noSave : le pied ne propose que
+   *  « Fermer » — la modale pilote elle-même ses propres boutons. */
+  function openModal(title, bodyHTML, footHTML, onSave, opts) {
+    opts = opts || {};
     $('#modalTitle').textContent = title;
     $('#modalBody').innerHTML = bodyHTML;
-    $('#modalFoot').innerHTML = footHTML || `<button class="btn ghost" data-modal="cancel">Annuler</button><button class="btn primary" data-modal="save">Enregistrer</button>`;
+    $('#modalFoot').innerHTML = footHTML !== null && footHTML !== undefined ? footHTML
+      : opts.noSave ? `<button class="btn ghost" data-modal="cancel">Fermer</button>`
+      : `<button class="btn ghost" data-modal="cancel">Annuler</button><button class="btn primary" data-modal="save">Enregistrer</button>`;
     $('#modalBackdrop').hidden = false;
+    $('#modalBackdrop').classList.toggle('wide', !!opts.wide);
     modalOnSave = onSave || null;
     const first = $('#modalBody input,#modalBody select'); if (first) setTimeout(() => first.focus(), 40);
   }
-  function closeModal() { $('#modalBackdrop').hidden = true; modalOnSave = null; }
+  /** Remplace le contenu d'une modale déjà ouverte (parcours en plusieurs étapes). */
+  function setModalBody(title, bodyHTML) {
+    $('#modalTitle').textContent = title;
+    $('#modalBody').innerHTML = bodyHTML;
+  }
+  function closeModal() {
+    $('#modalBackdrop').hidden = true;
+    $('#modalBackdrop').classList.remove('wide');
+    modalOnSave = null;
+  }
   function modalValues() {
     const o = {};
     $$('#modalBody [data-f]').forEach(el => {
@@ -4399,7 +4995,7 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
     perf.className = 'pill' + (s.plPct < 0 ? ' neg' : '');
     $('#heroPl').textContent = `${s.pl >= 0 ? '+' : ''}${eur(s.pl)} de plus-value latente`;
     $('#statMonth').textContent = eur(G.Store.investedInMonth());
-    $('#statCash').textContent = eur(s.cashValue);
+    $('#statCrypto').textContent = eur(s.cryptoValue);
     const y = G.Store.currentYield(s);
     $('#statIncome').textContent = eur(y.realised);
     $('#statYield').textContent = pctA(y.pct);
@@ -4409,8 +5005,8 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
     const data = [
       { label: 'ETF', value: s.etfValue, color: A.etf, target: s.target.etf },
       { label: 'Actions', value: s.stockValue, color: A.actions, target: s.target.actions },
-      { label: 'Immobilier', value: s.bricksValue, color: A.immobilier, target: s.target.immobilier },
-      { label: 'Liquidités', value: s.cashValue, color: A.cash, target: s.target.cash }
+      { label: 'Crypto', value: s.cryptoValue, color: A.crypto, target: s.target.crypto },
+      { label: 'Immobilier', value: s.bricksValue, color: A.immobilier, target: s.target.immobilier }
     ];
     G.Charts.donut($('#allocDonut'), data, { center: { top: eur(s.total), bottom: 'patrimoine' } });
     $('#allocLegend').innerHTML = data.map(d => {
@@ -4456,6 +5052,9 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
     G.Agent.dailyBrief().then(t => { $('#dailyBrief').innerHTML = t; });
   }
 
+  const TYPE_LBL = { etf: 'ETF', action: 'Action', crypto: 'Crypto' };
+  const TYPE_CLS = { etf: 'etf', action: 'action', crypto: 'crypto' };
+
   /* =============================================================== PORTFOLIO */
   function renderPortfolio() {
     const s = G.Store.snapshot();
@@ -4464,7 +5063,7 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
     const rows = s.holdings.map(h => {
       const cat = G.Store.findCatalog(h.catalogId || h.ticker || h.isin);
       return `<tr data-hid="${h.id}">
-        <td><span class="tag ${h.type === 'etf' ? 'etf' : 'action'}">${h.type === 'etf' ? 'ETF' : 'Action'}</span></td>
+        <td><span class="tag ${TYPE_CLS[h.type] || 'action'}">${TYPE_LBL[h.type] || 'Action'}</span></td>
         <td><span class="tick">${esc(h.ticker || '—')}</span><span class="sub">${esc(h.name || (cat ? cat.name : ''))}</span></td>
         <td>${esc(h.account)}${cat && cat.pea ? ' <span class="tag pea">PEA</span>' : ''}</td>
         <td class="num">${has(h.quantity) ? h.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 4 }) : '—'}</td>
@@ -4478,21 +5077,13 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
       </tr>`;
     }).join('');
 
-    const cashRows = st.cashAccounts.map(c => `<tr>
-      <td><span class="tag cash">Cash</span></td>
-      <td><span class="tick">${esc(c.label)}</span><span class="sub">${has(c.rate) && c.rate ? c.rate + ' %/an' : 'sans rémunération'}</span></td>
-      <td>—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
-      <td class="num"><b>${eur(c.amount)}</b><span class="sub">${pctA(s.total ? c.amount / s.total * 100 : 0)} du total</span></td>
-      <td class="num">—</td>
-      <td class="num"><button class="icon-btn" data-act="edit-c" data-id="${c.id}">✎</button>
-        <button class="icon-btn" data-act="del-c" data-id="${c.id}">✕</button></td></tr>`).join('');
-
-    $('#holdingsTable').innerHTML = (rows || cashRows)
+    $('#holdingsTable').innerHTML = rows
       ? `<table class="tbl"><thead><tr>
           <th>Type</th><th>Actif</th><th>Compte</th><th class="num">Qté</th><th class="num">PRU</th>
           <th class="num">Cours</th><th class="num">Valeur</th><th class="num">+/- value</th><th></th>
-        </tr></thead><tbody>${rows}${cashRows}</tbody></table>`
-      : `<div class="empty">Aucune position enregistrée.<br>Clique sur <b>+ Position</b> pour saisir tes ETF et actions.</div>`;
+        </tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="empty">Aucune position enregistrée.<br>
+         Clique sur <b>+ Position</b>, ou sur <b>⤢ Importer une photo</b> pour laisser InvestAI lire tes captures d'écran.</div>`;
 
     const exp = G.Engine.exposures(s);
     G.Charts.expoBars($('#geoExposure'), exp.geo);
@@ -4519,13 +5110,16 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
     const h = id ? G.Store.state.holdings.find(x => x.id === id) : null;
     const cats = G.Store.etfCatalog();
     const body = `<div class="field-grid">
-      ${field('type', 'Type', { type:'select', value: h ? h.type : 'etf', options:[{v:'etf',l:'ETF'},{v:'action',l:'Action'}] })}
-      ${field('account', 'Compte', { type:'select', value: h ? h.account : 'CTO', options:[{v:'PEA',l:'PEA'},{v:'CTO',l:'Compte-titres'},{v:'AV',l:'Assurance-vie'},{v:'PER',l:'PER'}] })}
+      ${field('type', 'Type', { type:'select', value: h ? h.type : 'etf', options:[{v:'etf',l:'ETF'},{v:'action',l:'Action'},{v:'crypto',l:'Crypto'}] })}
+      ${field('account', 'Compte / plateforme', { type:'select', value: h ? h.account : 'CTO', options:[
+        {v:'PEA',l:'PEA'},{v:'CTO',l:'Compte-titres'},{v:'AV',l:'Assurance-vie'},{v:'PER',l:'PER'},
+        {v:'Binance',l:'Binance'},{v:'Bitstack',l:'Bitstack'},{v:'Crypto.com',l:'Crypto.com'},
+        {v:'Coinbase',l:'Coinbase'},{v:'Kraken',l:'Kraken'},{v:'Ledger',l:'Ledger (auto-garde)'},{v:'Autre',l:'Autre'}] })}
       ${field('catalogId', 'ETF du catalogue (facultatif)', { type:'select', full:true, value: h ? h.catalogId : '',
         options: [{ v:'', l:'— aucun / action —' }].concat(cats.map(c => ({ v:c.id, l:`${c.name} (${c.ticker})` }))) })}
-      ${field('ticker', 'Ticker', { value: h ? h.ticker : '', ph:'AAPL, IWDA…' })}
+      ${field('ticker', 'Ticker', { value: h ? h.ticker : '', ph:'AAPL, IWDA, BTC…' })}
       ${field('name', 'Nom', { value: h ? h.name : '' })}
-      ${field('quantity', 'Quantité', { type:'number', value: h ? h.quantity : '' })}
+      ${field('quantity', 'Quantité', { type:'number', value: h ? h.quantity : '', ph:'0,0345 pour une fraction' })}
       ${field('avgPrice', "Prix de revient unitaire (€)", { type:'number', value: h ? h.avgPrice : '' })}
       ${field('sector', 'Secteur (actions)', { type:'select', value: h ? h.sector : '',
         options: [{v:'',l:'—'}].concat(['Technologie','Finance','Santé','Industrie','Conso. discrétionnaire','Conso. de base','Énergie','Communication','Services publics','Matériaux','Immobilier'].map(x => ({v:x,l:x}))) })}
@@ -4533,7 +5127,8 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
         options: [{v:'',l:'—'}].concat(['États-Unis','France','Europe hors RU','Royaume-Uni','Japon','Asie-Pacifique','Émergents','Chine'].map(x => ({v:x,l:x}))) })}
       ${field('currency', 'Devise', { type:'select', value: h ? h.currency : 'EUR', options:[{v:'EUR',l:'EUR'},{v:'USD',l:'USD'},{v:'GBP',l:'GBP'},{v:'CHF',l:'CHF'}] })}
     </div>
-    <p class="note" style="margin-top:14px">Le ticker sert à récupérer le cours réel. Si tu rattaches un ETF au catalogue, sa composition (indice, frais, géographie, secteurs) alimente l'analyse de diversification.</p>`;
+    <p class="note" style="margin-top:14px">Le ticker sert à récupérer le cours réel. Si tu rattaches un ETF au catalogue, sa composition (indice, frais, géographie, secteurs) alimente l'analyse de diversification.
+    Pour une crypto, saisis simplement son symbole (<code>BTC</code>, <code>ETH</code>, <code>SOL</code>…) : les cours viennent de CoinGecko, sans clé d'API. Les quantités fractionnaires sont acceptées.</p>`;
     openModal(id ? 'Modifier la position' : 'Nouvelle position', body, null, () => {
       const v = modalValues();
       if (!v.ticker && !v.name) { toast('Renseigne au moins un ticker ou un nom.', 'err'); return false; }
@@ -4587,20 +5182,6 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
       }
       toast('Mouvement enregistré.', 'ok');
       renderPortfolio(); renderDashboard();
-    });
-  }
-
-  function cashModal(id) {
-    const c = id ? G.Store.state.cashAccounts.find(x => x.id === id) : null;
-    const body = `<div class="field-grid">
-      ${field('label', 'Libellé', { full:true, value: c ? c.label : '', ph:'Livret A, compte espèces…' })}
-      ${field('amount', 'Montant (€)', { type:'number', value: c ? c.amount : '' })}
-      ${field('rate', 'Taux annuel (%)', { type:'number', value: c ? c.rate : '' })}
-    </div>`;
-    openModal(id ? 'Modifier les liquidités' : 'Liquidités', body, null, () => {
-      const v = modalValues();
-      if (id) G.Store.updateCash(id, v); else G.Store.addCash(v);
-      toast('Enregistré.', 'ok'); renderPortfolio(); renderDashboard();
     });
   }
 
@@ -4922,8 +5503,8 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
     $('#setCapital').value = st.profile.availableCash;
     $('#tgtEtf').value = st.profile.target.etf;
     $('#tgtActions').value = st.profile.target.actions;
+    $('#tgtCrypto').value = st.profile.target.crypto;
     $('#tgtImmo').value = st.profile.target.immobilier;
-    $('#tgtCash').value = st.profile.target.cash;
     updateTargetSum();
     $('#keyTwelve').value = st.settings.keys.twelvedata || '';
     $('#keyFinnhub').value = st.settings.keys.finnhub || '';
@@ -4942,7 +5523,7 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
     if (!$('#simVol').value) $('#simVol').value = prof.hypotheses.vol;
   }
   function updateTargetSum() {
-    const sum = ['#tgtEtf', '#tgtActions', '#tgtImmo', '#tgtCash'].reduce((s, id) => s + (Number($(id).value) || 0), 0);
+    const sum = ['#tgtEtf', '#tgtActions', '#tgtCrypto', '#tgtImmo'].reduce((s, id) => s + (Number($(id).value) || 0), 0);
     const el = $('#targetSum');
     el.textContent = `total ${sum} %`;
     el.style.color = sum === 100 ? 'var(--pos)' : 'var(--warn)';
@@ -4992,10 +5573,10 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
   }
 
   G.UI = {
-    $, $$, esc, eur, eur2, pctS, pctA, md, toast, openModal, closeModal, modalValues, field,
+    $, $$, esc, eur, eur2, pctS, pctA, md, toast, openModal, setModalBody, closeModal, modalValues, field,
     go, renderDashboard, renderPortfolio, renderEtfRanking, renderBricksList, renderJournal,
     renderWatchlist, renderSettings, updateTargetSum, renderChatHistory, addMsg, addTyping,
-    setTypingNote, removeTyping, holdingModal, txModal, cashModal, brickModal, etfModal,
+    setTypingNote, removeTyping, holdingModal, txModal, brickModal, etfModal,
     analyseStock, compareWatchlist, reviewJournalUI, stockCard, confHTML, scoreCls,
     get modalOnSave() { return modalOnSave; }
   };
@@ -5133,7 +5714,9 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
   function wireTopbar() {
     $('#btnRefresh').addEventListener('click', async () => {
       const btn = $('#btnRefresh');
-      if (!G.Market.hasProvider()) {
+      // CoinGecko cote les cryptos sans clé : on ne bloque que si RIEN n'est cotable.
+      const cotable = st().holdings.some(h => h.ticker && G.Market.canQuote(h.ticker));
+      if (!cotable) {
         U().toast("Aucun fournisseur configuré. Va dans Réglages pour ajouter une clé gratuite.", 'err');
         U().go('settings'); return;
       }
@@ -5178,7 +5761,7 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
   function wirePortfolio() {
     $('#btnAddHolding').addEventListener('click', () => U().holdingModal());
     $('#btnAddTx').addEventListener('click', () => U().txModal());
-    $('#btnAddCash').addEventListener('click', () => U().cashModal());
+    $('#btnImportPhoto').addEventListener('click', () => G.Vision.openImport());
 
     document.addEventListener('click', e => {
       const b = e.target.closest('[data-act]'); if (!b) return;
@@ -5186,8 +5769,6 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
       switch (b.dataset.act) {
         case 'edit-h': U().holdingModal(id); break;
         case 'del-h': if (confirm('Supprimer cette position et ses mouvements ?')) { G.Store.removeHolding(id); U().renderPortfolio(); U().renderDashboard(); } break;
-        case 'edit-c': U().cashModal(id); break;
-        case 'del-c': if (confirm('Supprimer ce compte de liquidités ?')) { G.Store.removeCash(id); U().renderPortfolio(); U().renderDashboard(); } break;
         case 'del-tx': if (confirm('Supprimer ce mouvement ?')) { G.Store.removeTransaction(id); U().renderPortfolio(); U().renderDashboard(); } break;
         case 'edit-b': U().brickModal(id); break;
         case 'del-b': if (confirm('Supprimer ce projet ?')) { G.Store.removeBrick(id); U().renderBricksList(); U().renderDashboard(); } break;
@@ -5467,11 +6048,11 @@ CONTEXTE PORTEFEUILLE (données réelles calculées par l'application, source de
     bind('#setMonthly', e => { st().profile.monthlyBudget = Number(e.target.value) || 0; G.Store.save(); U().renderSettings(); });
     bind('#setCapital', e => { st().profile.availableCash = Number(e.target.value) || 0; G.Store.save(); U().renderSettings(); U().renderDashboard(); });
 
-    ['#tgtEtf', '#tgtActions', '#tgtImmo', '#tgtCash'].forEach(id => $(id).addEventListener('input', U().updateTargetSum));
+    ['#tgtEtf', '#tgtActions', '#tgtCrypto', '#tgtImmo'].forEach(id => $(id).addEventListener('input', U().updateTargetSum));
     $('#btnSaveTarget').addEventListener('click', () => {
       const t = { etf: Number($('#tgtEtf').value) || 0, actions: Number($('#tgtActions').value) || 0,
-                  immobilier: Number($('#tgtImmo').value) || 0, cash: Number($('#tgtCash').value) || 0 };
-      const sum = t.etf + t.actions + t.immobilier + t.cash;
+                  crypto: Number($('#tgtCrypto').value) || 0, immobilier: Number($('#tgtImmo').value) || 0 };
+      const sum = t.etf + t.actions + t.crypto + t.immobilier;
       if (sum !== 100) { U().toast(`Le total doit faire 100 % (actuellement ${sum} %).`, 'err'); return; }
       st().profile.target = t; G.Store.save();
       U().renderDashboard(); U().toast('Allocation cible enregistrée.', 'ok');

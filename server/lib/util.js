@@ -180,10 +180,14 @@ function clampInt(v, min, max, dflt) {
   if (!isFinite(n)) return dflt;
   return Math.max(min, Math.min(max, n));
 }
-/** Symbole de marché : lettres, chiffres, point, tiret, deux-points. */
+/** Symbole de marché. Liste blanche stricte : un symbole de base
+ *  (lettres, chiffres, point, tiret, deux-points) commençant par un
+ *  alphanumérique, éventuellement suivi d'une seule devise de cotation pour
+ *  les paires crypto — « BTC/EUR ». Toute séquence « .. » est refusée.  */
 function cleanSymbol(s) {
   const t = String(s || '').trim().toUpperCase();
-  return /^[A-Z0-9.\-:]{1,20}$/.test(t) ? t : null;
+  if (t.length > 20 || t.indexOf('..') >= 0) return null;
+  return /^[A-Z0-9][A-Z0-9.\-:]*(\/[A-Z0-9]{2,10})?$/.test(t) ? t : null;
 }
 function isoDate(d) { return new Date(d || Date.now()).toISOString().slice(0, 10); }
 

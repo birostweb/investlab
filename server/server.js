@@ -38,6 +38,42 @@ const ANTHROPIC_KEY = (ENV.ANTHROPIC_API_KEY || '').trim();
 const ANTHROPIC_MODEL = ENV.ANTHROPIC_MODEL || 'claude-sonnet-5';
 const VERSION = '2.0.0';
 
+const MAX_IMAGES = 8;
+const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+
+/* Consigne de lecture des captures d'écran. Volontairement stricte : l'extraction
+   ne doit RIEN deviner. Ce qui n'est pas lisible reste nul et remonte dans
+   `warnings`, pour que l'écran de validation le montre à l'utilisateur. */
+const VISION_SYSTEM = [
+  'Tu extrais des positions financières depuis des captures d\'écran de portefeuilles',
+  '(Binance, Bitstack, Crypto.com, Coinbase, Kraken, Boursorama, Trade Republic, Degiro…).',
+  'Tu réponds UNIQUEMENT avec un objet JSON valide, sans texte autour, sans bloc de code.',
+  '',
+  'Schéma exact :',
+  '{"positions":[{"type":"crypto|etf|action","ticker":"BTC","name":"Bitcoin",',
+  '"quantity":0.0345,"avgPrice":41200.5,"currency":"EUR","account":"Binance",',
+  '"confidence":"haute|moyenne|basse","source":"ce que tu as lu littéralement"}],',
+  '"warnings":["…"],"detected":"nom de la plateforme reconnue ou null"}',
+  '',
+  'RÈGLES ABSOLUES :',
+  '- N\'invente JAMAIS une valeur. Un champ illisible ou absent vaut null.',
+  '- Ne convertis ni les devises ni les unités. Recopie les nombres tels qu\'affichés.',
+  '- `quantity` est la quantité détenue, PAS la valeur en euros. Si l\'écran ne montre',
+  '  qu\'une valeur totale et un prix unitaire, laisse quantity à null et signale-le.',
+  '- `avgPrice` est le prix de revient unitaire (PRU). Si l\'écran ne montre que le',
+  '  cours actuel, laisse avgPrice à null et dis-le dans warnings — ne confonds jamais',
+  '  le cours du moment avec un prix de revient.',
+  '- Les nombres utilisent le point décimal. Retire les espaces des milliers.',
+  '- Attention aux formats français : « 1 234,56 » vaut 1234.56.',
+  '- `confidence` reflète ta lecture : "basse" si le texte est flou, rogné ou ambigu.',
+  '- Ignore les totaux, les soldes globaux, les lignes de gains/pertes et les publicités.',
+  '- Un stablecoin (USDT, USDC…) est de type "crypto".',
+  '- Si aucune position n\'est lisible, renvoie {"positions":[],"warnings":["…"],"detected":null}.'
+].join('\n');
+
+const VISION_PROMPT = 'Extrais toutes les positions visibles sur ces captures. ' +
+  'Réponds uniquement avec le JSON du schéma indiqué.';
+
 const log = (...a) => console.log(new Date().toISOString(), '·', ...a);
 const warn = (...a) => console.warn(new Date().toISOString(), '!', ...a);
 
@@ -244,6 +280,8 @@ async function handleApi(req, res, urlPath, query) {
       providers: authed ? providers.status() : undefined,
       hasMarketData: authed ? providers.hasAny() : undefined,
       aiEnabled: authed ? !!ANTHROPIC_KEY : undefined,
+      visionEnabled: authed ? !!ANTHROPIC_KEY : undefined,
+      maxImages: authed ? MAX_IMAGES : undefined,
       refreshMinutes: authed ? REFRESH_MINUTES : undefined,
       lastRefresh: authed ? lastRefresh : undefined,
       stats: authed ? providers.stats : undefined
@@ -275,7 +313,7 @@ async function handleApi(req, res, urlPath, query) {
   if (urlPath === '/api/quote' || urlPath === '/api/series' || urlPath === '/api/fundamentals') {
     const sym = U.cleanSymbol(query.symbol);
     if (!sym) return json(req, res, 400, { error: 'symbole invalide' });
-    if (!providers.hasAny()) {
+    if (!providers.canServe(sym)) {
       return json(req, res, 200, { data: null, reason: 'aucun fournisseur configuré sur le serveur' });
     }
     const kind = urlPath.slice(5);
@@ -294,6 +332,58 @@ async function handleApi(req, res, urlPath, query) {
   if (urlPath === '/api/refresh' && req.method === 'POST') {
     const r = await refreshAll(true);
     return json(req, res, 200, r);
+  }
+
+  /* ---- lecture de captures d'écran (vision) ----
+     Le navigateur envoie des images, Claude en extrait des positions
+     STRUCTURÉES. Rien n'est enregistré ici : la réponse repart au navigateur,
+     qui la fait valider ligne par ligne avant de créer quoi que ce soit. */
+  if (urlPath === '/api/vision' && req.method === 'POST') {
+    if (!ANTHROPIC_KEY) return json(req, res, 503, { error: 'lecture de photo non configurée : ajoute ANTHROPIC_API_KEY sur le serveur' });
+    let body;
+    try { body = await readBody(req, 24 * 1024 * 1024); }
+    catch (e) { return json(req, res, 400, { error: e.message }); }
+    const images = (body && Array.isArray(body.images)) ? body.images : null;
+    if (!images || !images.length) return json(req, res, 400, { error: 'aucune image fournie' });
+    if (images.length > MAX_IMAGES) return json(req, res, 400, { error: `${MAX_IMAGES} images au maximum par envoi` });
+
+    const content = [];
+    for (const im of images) {
+      const mt = String(im && im.mediaType || '');
+      if (!ALLOWED_IMAGE_TYPES.includes(mt)) return json(req, res, 400, { error: 'format d\'image non pris en charge : ' + mt });
+      const data = String(im.data || '');
+      if (!/^[A-Za-z0-9+/=]+$/.test(data) || data.length > 8 * 1024 * 1024) {
+        return json(req, res, 400, { error: 'image invalide ou trop volumineuse' });
+      }
+      content.push({ type: 'image', source: { type: 'base64', media_type: mt, data } });
+    }
+    content.push({ type: 'text', text: VISION_PROMPT });
+
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': ANTHROPIC_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: ANTHROPIC_MODEL, max_tokens: 4000,
+          system: VISION_SYSTEM,
+          messages: [{ role: 'user', content }]
+        })
+      });
+      if (!r.ok) {
+        const t = await r.text();
+        warn('Anthropic vision ' + r.status + ' : ' + t.slice(0, 200));
+        return json(req, res, 502, { error: 'lecture impossible (' + r.status + ')' });
+      }
+      const j = await r.json();
+      const text = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('\n');
+      return json(req, res, 200, { text });
+    } catch (e) {
+      return json(req, res, 502, { error: 'appel impossible : ' + e.message });
+    }
   }
 
   /* ---- chat en langage naturel (clé côté serveur) ---- */
@@ -344,7 +434,7 @@ let refreshing = false;
 
 async function refreshAll(manual) {
   if (refreshing) return { skipped: true, reason: 'rafraîchissement déjà en cours' };
-  if (!providers.hasAny()) return { skipped: true, reason: 'aucun fournisseur configuré' };
+  // CoinGecko couvre les cryptos sans clé : on ne renonce que si rien n'est servable.
   refreshing = true;
   const t0 = Date.now();
   let updated = 0, failed = 0, total = 0;
@@ -352,10 +442,12 @@ async function refreshAll(manual) {
     const state = store.readState();
     if (!state) return { skipped: true, reason: 'aucun portefeuille enregistré' };
 
-    const symbols = new Set();
-    (state.holdings || []).forEach(h => { if (h.ticker) symbols.add(String(h.ticker).toUpperCase()); });
-    (state.watchlist || []).forEach(w => { if (w.ticker) symbols.add(String(w.ticker).toUpperCase()); });
+    const all = new Set();
+    (state.holdings || []).forEach(h => { if (h.ticker) all.add(String(h.ticker).toUpperCase()); });
+    (state.watchlist || []).forEach(w => { if (w.ticker) all.add(String(w.ticker).toUpperCase()); });
+    const symbols = new Set([...all].filter(sym => providers.canServe(sym)));
     total = symbols.size;
+    if (!total) return { skipped: true, reason: 'aucun symbole servable par les fournisseurs actifs' };
 
     for (const sym of symbols) {
       const q = await providers.quote(sym, { force: true });

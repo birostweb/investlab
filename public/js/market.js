@@ -113,6 +113,38 @@
     };
   }
 
+  /* CoinGecko : gratuit, sans clé, et il cote les jetons que Twelve Data ignore.
+     La table d'identifiants vit dans data.js (CRYPTO_CATALOG). */
+  function cryptoOf(symbol) {
+    const [base, quote] = String(symbol || '').toUpperCase().split('/');
+    const meta = G.DATA.CRYPTO_BY_TICKER[base];
+    return meta ? { id: meta.id, base, quote: quote || 'EUR' } : null;
+  }
+  async function quoteCoinGecko(c) {
+    const vs = c.quote.toLowerCase();
+    const j = await throttled('coingecko', 2500, () => getJSON(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(c.id)}` +
+      `&vs_currencies=${encodeURIComponent(vs)}&include_24hr_change=true&include_last_updated_at=true`, 12000));
+    const row = j && j[c.id];
+    const price = num(row && row[vs]);
+    if (price == null) return null;
+    return {
+      price, currency: c.quote, changePct: num(row[vs + '_24h_change']),
+      name: c.base, source: 'CoinGecko',
+      asOf: row.last_updated_at ? G.Store.localISO(new Date(row.last_updated_at * 1000)) : G.Store.todayISO()
+    };
+  }
+  async function seriesCoinGecko(c) {
+    const j = await throttled('coingecko', 2500, () => getJSON(
+      `https://api.coingecko.com/api/v3/coins/${encodeURIComponent(c.id)}/market_chart` +
+      `?vs_currency=${encodeURIComponent(c.quote.toLowerCase())}&days=365&interval=daily`, 20000));
+    if (!j || !Array.isArray(j.prices) || j.prices.length < 30) return null;
+    return {
+      closes: j.prices.map(([ms, v]) => ({ d: G.Store.localISO(new Date(ms)), c: num(v) })).filter(x => x.c != null),
+      src: 'CoinGecko'
+    };
+  }
+
   /** Cotation : essaie chaque fournisseur configuré, garde le premier succès. */
   async function quote(symbol, opts) {
     opts = opts || {};
@@ -122,6 +154,13 @@
       try { return await G.Api.quote(k, opts); } catch (e) { return null; }
     }
     if (!opts.force && fresh(cache().quotes[k], TTL.quote)) return cache().quotes[k].v;
+    const c = cryptoOf(k);
+    if (c) {
+      try {
+        const v = await quoteCoinGecko(c);
+        if (v) { cache().quotes[k] = { ts: Date.now(), v }; G.Store.save(); return v; }
+      } catch (e) { /* on retombe sur les fournisseurs génériques */ }
+    }
     for (const fn of [quoteTwelve, quoteFinnhub, quoteAlpha]) {
       try {
         const v = await fn(symbol);
@@ -150,7 +189,15 @@
     const key = keys().twelvedata;
     let closes = null, src = null, asOf = null;
 
-    if (key) {
+    const cg = cryptoOf(k);
+    if (cg) {
+      try {
+        const r = await seriesCoinGecko(cg);
+        if (r) { closes = r.closes; src = r.src; asOf = closes[closes.length - 1].d; }
+      } catch (e) { /* on tente les fournisseurs génériques */ }
+    }
+
+    if (!closes && key) {
       try {
         const j = await throttled('twelvedata', 8000, () =>
           getJSON(`https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(symbol)}` +
@@ -337,7 +384,8 @@
       if (fresh) G.Store.replaceState(fresh);
       return { total: (r && r.total) || 0, updated: (r && r.updated) || 0 };
     }
-    const list = st.holdings.filter(h => h.ticker);
+    // on n'interroge que ce qui est réellement cotable par un fournisseur actif
+    const list = st.holdings.filter(h => h.ticker && canQuote(h.ticker));
     let done = 0, ok = 0;
     for (const h of list) {
       const q = await quote(h.ticker, { force: true });
@@ -385,6 +433,9 @@
     const k = keys();
     return !!(k.twelvedata || k.finnhub || k.alphavantage);
   }
+  /** Y a-t-il de quoi coter CE symbole ? CoinGecko ne demande aucune clé, donc
+   *  une position crypto est toujours actualisable. */
+  function canQuote(symbol) { return hasProvider() || !!cryptoOf(symbol); }
   function providerStatus() {
     if (viaServer() && G.Api.config && G.Api.config.providers) return G.Api.config.providers;
     const k = keys();
@@ -416,7 +467,7 @@
   }
 
   G.Market = {
-    quote, series, fundamentals, fx, refreshHoldings,
+    quote, series, fundamentals, fx, refreshHoldings, canQuote, cryptoOf,
     hasProvider, providerStatus, testKeys, computeStats
   };
 })(window);

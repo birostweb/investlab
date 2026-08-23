@@ -69,15 +69,30 @@
 
   /* ================================================================= MODALE */
   let modalOnSave = null;
-  function openModal(title, bodyHTML, footHTML, onSave) {
+  /** opts.wide : modale large (tableaux). opts.noSave : le pied ne propose que
+   *  « Fermer » — la modale pilote elle-même ses propres boutons. */
+  function openModal(title, bodyHTML, footHTML, onSave, opts) {
+    opts = opts || {};
     $('#modalTitle').textContent = title;
     $('#modalBody').innerHTML = bodyHTML;
-    $('#modalFoot').innerHTML = footHTML || `<button class="btn ghost" data-modal="cancel">Annuler</button><button class="btn primary" data-modal="save">Enregistrer</button>`;
+    $('#modalFoot').innerHTML = footHTML !== null && footHTML !== undefined ? footHTML
+      : opts.noSave ? `<button class="btn ghost" data-modal="cancel">Fermer</button>`
+      : `<button class="btn ghost" data-modal="cancel">Annuler</button><button class="btn primary" data-modal="save">Enregistrer</button>`;
     $('#modalBackdrop').hidden = false;
+    $('#modalBackdrop').classList.toggle('wide', !!opts.wide);
     modalOnSave = onSave || null;
     const first = $('#modalBody input,#modalBody select'); if (first) setTimeout(() => first.focus(), 40);
   }
-  function closeModal() { $('#modalBackdrop').hidden = true; modalOnSave = null; }
+  /** Remplace le contenu d'une modale déjà ouverte (parcours en plusieurs étapes). */
+  function setModalBody(title, bodyHTML) {
+    $('#modalTitle').textContent = title;
+    $('#modalBody').innerHTML = bodyHTML;
+  }
+  function closeModal() {
+    $('#modalBackdrop').hidden = true;
+    $('#modalBackdrop').classList.remove('wide');
+    modalOnSave = null;
+  }
   function modalValues() {
     const o = {};
     $$('#modalBody [data-f]').forEach(el => {
@@ -142,7 +157,7 @@
     perf.className = 'pill' + (s.plPct < 0 ? ' neg' : '');
     $('#heroPl').textContent = `${s.pl >= 0 ? '+' : ''}${eur(s.pl)} de plus-value latente`;
     $('#statMonth').textContent = eur(G.Store.investedInMonth());
-    $('#statCash').textContent = eur(s.cashValue);
+    $('#statCrypto').textContent = eur(s.cryptoValue);
     const y = G.Store.currentYield(s);
     $('#statIncome').textContent = eur(y.realised);
     $('#statYield').textContent = pctA(y.pct);
@@ -152,8 +167,8 @@
     const data = [
       { label: 'ETF', value: s.etfValue, color: A.etf, target: s.target.etf },
       { label: 'Actions', value: s.stockValue, color: A.actions, target: s.target.actions },
-      { label: 'Immobilier', value: s.bricksValue, color: A.immobilier, target: s.target.immobilier },
-      { label: 'Liquidités', value: s.cashValue, color: A.cash, target: s.target.cash }
+      { label: 'Crypto', value: s.cryptoValue, color: A.crypto, target: s.target.crypto },
+      { label: 'Immobilier', value: s.bricksValue, color: A.immobilier, target: s.target.immobilier }
     ];
     G.Charts.donut($('#allocDonut'), data, { center: { top: eur(s.total), bottom: 'patrimoine' } });
     $('#allocLegend').innerHTML = data.map(d => {
@@ -199,6 +214,9 @@
     G.Agent.dailyBrief().then(t => { $('#dailyBrief').innerHTML = t; });
   }
 
+  const TYPE_LBL = { etf: 'ETF', action: 'Action', crypto: 'Crypto' };
+  const TYPE_CLS = { etf: 'etf', action: 'action', crypto: 'crypto' };
+
   /* =============================================================== PORTFOLIO */
   function renderPortfolio() {
     const s = G.Store.snapshot();
@@ -207,7 +225,7 @@
     const rows = s.holdings.map(h => {
       const cat = G.Store.findCatalog(h.catalogId || h.ticker || h.isin);
       return `<tr data-hid="${h.id}">
-        <td><span class="tag ${h.type === 'etf' ? 'etf' : 'action'}">${h.type === 'etf' ? 'ETF' : 'Action'}</span></td>
+        <td><span class="tag ${TYPE_CLS[h.type] || 'action'}">${TYPE_LBL[h.type] || 'Action'}</span></td>
         <td><span class="tick">${esc(h.ticker || '—')}</span><span class="sub">${esc(h.name || (cat ? cat.name : ''))}</span></td>
         <td>${esc(h.account)}${cat && cat.pea ? ' <span class="tag pea">PEA</span>' : ''}</td>
         <td class="num">${has(h.quantity) ? h.quantity.toLocaleString('fr-FR', { maximumFractionDigits: 4 }) : '—'}</td>
@@ -221,21 +239,13 @@
       </tr>`;
     }).join('');
 
-    const cashRows = st.cashAccounts.map(c => `<tr>
-      <td><span class="tag cash">Cash</span></td>
-      <td><span class="tick">${esc(c.label)}</span><span class="sub">${has(c.rate) && c.rate ? c.rate + ' %/an' : 'sans rémunération'}</span></td>
-      <td>—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
-      <td class="num"><b>${eur(c.amount)}</b><span class="sub">${pctA(s.total ? c.amount / s.total * 100 : 0)} du total</span></td>
-      <td class="num">—</td>
-      <td class="num"><button class="icon-btn" data-act="edit-c" data-id="${c.id}">✎</button>
-        <button class="icon-btn" data-act="del-c" data-id="${c.id}">✕</button></td></tr>`).join('');
-
-    $('#holdingsTable').innerHTML = (rows || cashRows)
+    $('#holdingsTable').innerHTML = rows
       ? `<table class="tbl"><thead><tr>
           <th>Type</th><th>Actif</th><th>Compte</th><th class="num">Qté</th><th class="num">PRU</th>
           <th class="num">Cours</th><th class="num">Valeur</th><th class="num">+/- value</th><th></th>
-        </tr></thead><tbody>${rows}${cashRows}</tbody></table>`
-      : `<div class="empty">Aucune position enregistrée.<br>Clique sur <b>+ Position</b> pour saisir tes ETF et actions.</div>`;
+        </tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="empty">Aucune position enregistrée.<br>
+         Clique sur <b>+ Position</b>, ou sur <b>⤢ Importer une photo</b> pour laisser InvestAI lire tes captures d'écran.</div>`;
 
     const exp = G.Engine.exposures(s);
     G.Charts.expoBars($('#geoExposure'), exp.geo);
@@ -262,13 +272,16 @@
     const h = id ? G.Store.state.holdings.find(x => x.id === id) : null;
     const cats = G.Store.etfCatalog();
     const body = `<div class="field-grid">
-      ${field('type', 'Type', { type:'select', value: h ? h.type : 'etf', options:[{v:'etf',l:'ETF'},{v:'action',l:'Action'}] })}
-      ${field('account', 'Compte', { type:'select', value: h ? h.account : 'CTO', options:[{v:'PEA',l:'PEA'},{v:'CTO',l:'Compte-titres'},{v:'AV',l:'Assurance-vie'},{v:'PER',l:'PER'}] })}
+      ${field('type', 'Type', { type:'select', value: h ? h.type : 'etf', options:[{v:'etf',l:'ETF'},{v:'action',l:'Action'},{v:'crypto',l:'Crypto'}] })}
+      ${field('account', 'Compte / plateforme', { type:'select', value: h ? h.account : 'CTO', options:[
+        {v:'PEA',l:'PEA'},{v:'CTO',l:'Compte-titres'},{v:'AV',l:'Assurance-vie'},{v:'PER',l:'PER'},
+        {v:'Binance',l:'Binance'},{v:'Bitstack',l:'Bitstack'},{v:'Crypto.com',l:'Crypto.com'},
+        {v:'Coinbase',l:'Coinbase'},{v:'Kraken',l:'Kraken'},{v:'Ledger',l:'Ledger (auto-garde)'},{v:'Autre',l:'Autre'}] })}
       ${field('catalogId', 'ETF du catalogue (facultatif)', { type:'select', full:true, value: h ? h.catalogId : '',
         options: [{ v:'', l:'— aucun / action —' }].concat(cats.map(c => ({ v:c.id, l:`${c.name} (${c.ticker})` }))) })}
-      ${field('ticker', 'Ticker', { value: h ? h.ticker : '', ph:'AAPL, IWDA…' })}
+      ${field('ticker', 'Ticker', { value: h ? h.ticker : '', ph:'AAPL, IWDA, BTC…' })}
       ${field('name', 'Nom', { value: h ? h.name : '' })}
-      ${field('quantity', 'Quantité', { type:'number', value: h ? h.quantity : '' })}
+      ${field('quantity', 'Quantité', { type:'number', value: h ? h.quantity : '', ph:'0,0345 pour une fraction' })}
       ${field('avgPrice', "Prix de revient unitaire (€)", { type:'number', value: h ? h.avgPrice : '' })}
       ${field('sector', 'Secteur (actions)', { type:'select', value: h ? h.sector : '',
         options: [{v:'',l:'—'}].concat(['Technologie','Finance','Santé','Industrie','Conso. discrétionnaire','Conso. de base','Énergie','Communication','Services publics','Matériaux','Immobilier'].map(x => ({v:x,l:x}))) })}
@@ -276,7 +289,8 @@
         options: [{v:'',l:'—'}].concat(['États-Unis','France','Europe hors RU','Royaume-Uni','Japon','Asie-Pacifique','Émergents','Chine'].map(x => ({v:x,l:x}))) })}
       ${field('currency', 'Devise', { type:'select', value: h ? h.currency : 'EUR', options:[{v:'EUR',l:'EUR'},{v:'USD',l:'USD'},{v:'GBP',l:'GBP'},{v:'CHF',l:'CHF'}] })}
     </div>
-    <p class="note" style="margin-top:14px">Le ticker sert à récupérer le cours réel. Si tu rattaches un ETF au catalogue, sa composition (indice, frais, géographie, secteurs) alimente l'analyse de diversification.</p>`;
+    <p class="note" style="margin-top:14px">Le ticker sert à récupérer le cours réel. Si tu rattaches un ETF au catalogue, sa composition (indice, frais, géographie, secteurs) alimente l'analyse de diversification.
+    Pour une crypto, saisis simplement son symbole (<code>BTC</code>, <code>ETH</code>, <code>SOL</code>…) : les cours viennent de CoinGecko, sans clé d'API. Les quantités fractionnaires sont acceptées.</p>`;
     openModal(id ? 'Modifier la position' : 'Nouvelle position', body, null, () => {
       const v = modalValues();
       if (!v.ticker && !v.name) { toast('Renseigne au moins un ticker ou un nom.', 'err'); return false; }
@@ -330,20 +344,6 @@
       }
       toast('Mouvement enregistré.', 'ok');
       renderPortfolio(); renderDashboard();
-    });
-  }
-
-  function cashModal(id) {
-    const c = id ? G.Store.state.cashAccounts.find(x => x.id === id) : null;
-    const body = `<div class="field-grid">
-      ${field('label', 'Libellé', { full:true, value: c ? c.label : '', ph:'Livret A, compte espèces…' })}
-      ${field('amount', 'Montant (€)', { type:'number', value: c ? c.amount : '' })}
-      ${field('rate', 'Taux annuel (%)', { type:'number', value: c ? c.rate : '' })}
-    </div>`;
-    openModal(id ? 'Modifier les liquidités' : 'Liquidités', body, null, () => {
-      const v = modalValues();
-      if (id) G.Store.updateCash(id, v); else G.Store.addCash(v);
-      toast('Enregistré.', 'ok'); renderPortfolio(); renderDashboard();
     });
   }
 
@@ -665,8 +665,8 @@
     $('#setCapital').value = st.profile.availableCash;
     $('#tgtEtf').value = st.profile.target.etf;
     $('#tgtActions').value = st.profile.target.actions;
+    $('#tgtCrypto').value = st.profile.target.crypto;
     $('#tgtImmo').value = st.profile.target.immobilier;
-    $('#tgtCash').value = st.profile.target.cash;
     updateTargetSum();
     $('#keyTwelve').value = st.settings.keys.twelvedata || '';
     $('#keyFinnhub').value = st.settings.keys.finnhub || '';
@@ -685,7 +685,7 @@
     if (!$('#simVol').value) $('#simVol').value = prof.hypotheses.vol;
   }
   function updateTargetSum() {
-    const sum = ['#tgtEtf', '#tgtActions', '#tgtImmo', '#tgtCash'].reduce((s, id) => s + (Number($(id).value) || 0), 0);
+    const sum = ['#tgtEtf', '#tgtActions', '#tgtCrypto', '#tgtImmo'].reduce((s, id) => s + (Number($(id).value) || 0), 0);
     const el = $('#targetSum');
     el.textContent = `total ${sum} %`;
     el.style.color = sum === 100 ? 'var(--pos)' : 'var(--warn)';
@@ -735,10 +735,10 @@
   }
 
   G.UI = {
-    $, $$, esc, eur, eur2, pctS, pctA, md, toast, openModal, closeModal, modalValues, field,
+    $, $$, esc, eur, eur2, pctS, pctA, md, toast, openModal, setModalBody, closeModal, modalValues, field,
     go, renderDashboard, renderPortfolio, renderEtfRanking, renderBricksList, renderJournal,
     renderWatchlist, renderSettings, updateTargetSum, renderChatHistory, addMsg, addTyping,
-    setTypingNote, removeTyping, holdingModal, txModal, cashModal, brickModal, etfModal,
+    setTypingNote, removeTyping, holdingModal, txModal, brickModal, etfModal,
     analyseStock, compareWatchlist, reviewJournalUI, stockCard, confHTML, scoreCls,
     get modalOnSave() { return modalOnSave; }
   };
